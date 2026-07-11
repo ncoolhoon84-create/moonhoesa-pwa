@@ -567,8 +567,8 @@
       outlook: '메모리 반도체는 AI 서버향 수요가 견조하지만 스마트폰·가전은 성장 둔화 국면. 파운드리 사업의 수주 확대 여부가 중기 밸류에이션의 핵심 변수로 꼽힘.',
       financials: {
         years: ['2022', '2023', '2024', '2025'],
-        revenue: [302, 259, 300, 318],
-        profit: [55, 6, 34, 41]
+        revenue: [3020000, 2590000, 3000000, 3180000],
+        profit: [550000, 60000, 340000, 410000]
       },
       ma: {
         months: ['3월', '4월', '5월', '6월', '7월'],
@@ -590,8 +590,8 @@
       outlook: '미국 데이터센터·전력망 투자 확대 국면에서 수주 모멘텀은 긍정적이나, 최근 주가 상승폭이 커서 밸류에이션 부담이 동반되는 구간이라는 시각도 있음.',
       financials: {
         years: ['2022', '2023', '2024', '2025'],
-        revenue: [3.4, 3.9, 4.5, 5.1],
-        profit: [0.15, 0.28, 0.41, 0.52]
+        revenue: [34000, 39000, 45000, 51000],
+        profit: [1500, 2800, 4100, 5200]
       },
       ma: {
         months: ['3월', '4월', '5월', '6월', '7월'],
@@ -613,8 +613,8 @@
       outlook: 'AI 검색·커머스 결합 서비스 확대가 신성장 동력으로 거론되지만, 광고 본업 성장률 둔화를 상쇄할 만큼의 속도인지는 아직 지켜봐야 하는 단계.',
       financials: {
         years: ['2022', '2023', '2024', '2025'],
-        revenue: [8.2, 9.1, 10.2, 11.0],
-        profit: [1.2, 1.4, 1.6, 1.7]
+        revenue: [82000, 91000, 102000, 110000],
+        profit: [12000, 14000, 16000, 17000]
       },
       ma: {
         months: ['3월', '4월', '5월', '6월', '7월'],
@@ -667,6 +667,22 @@
 
     if (!overview && !marketCap) return null; // 아무것도 못 뽑았으면 실패로 간주
     return { overview, marketCap };
+  }
+
+  // fnguide는 시가총액을 "16,661,894억원"처럼 억원 단위 그대로 주는데,
+  // 1만억(=1조) 넘으면 조 단위로 바꿔서 좀 더 읽기 편하게 함
+  function formatMarketCap(text) {
+    if (!text) return text;
+    const match = text.match(/^([\d,]+)\s*억원$/);
+    if (!match) return text; // 예상 못 한 형식이면 원문 그대로 표시
+    const eok = parseInt(match[1].replace(/,/g, ''), 10);
+    if (Number.isNaN(eok)) return text;
+    if (eok >= 10000) {
+      const jo = eok / 10000;
+      const rounded = Math.round(jo * 10) / 10;
+      return '약 ' + rounded.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '조원';
+    }
+    return '약 ' + eok.toLocaleString('ko-KR') + '억원';
   }
 
   // 실제 API 호출 (실패하면 null 반환 → 호출부에서 데모 데이터 유지)
@@ -1038,7 +1054,7 @@
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
       if (real && (real.overview || real.marketCap)) {
         if (real.overview) document.getElementById('companyOverview').textContent = real.overview;
-        if (real.marketCap) document.getElementById('marketCap').textContent = real.marketCap;
+        if (real.marketCap) document.getElementById('marketCap').textContent = formatMarketCap(real.marketCap);
         sourceTag.textContent = '실시간';
         sourceTag.className = 'data-source-tag live';
       } else {
@@ -1145,6 +1161,18 @@
     return Math.round(n).toLocaleString('ko-KR');
   }
 
+  // 매출·순이익 차트 값은 전부 "억원" 단위로 통일해서 넘어옴(데모/실시간 공통) ->
+  // 1만억(=1조) 넘으면 "조" 단위로, 아니면 "억" 단위 그대로 표기
+  function formatEokWonLabel(value) {
+    if (value === null || value === undefined || Number.isNaN(value)) return '';
+    if (Math.abs(value) >= 10000) {
+      const jo = value / 10000;
+      const rounded = Math.round(jo * 10) / 10;
+      return rounded.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '조';
+    }
+    return Math.round(value).toLocaleString('ko-KR') + '억';
+  }
+
   function renderBarChart(labels, seriesA, seriesB) {
     const w = 500, h = 190, padL = 34, padB = 26, padT = 20, padR = 10;
     const chartW = w - padL - padR;
@@ -1163,8 +1191,8 @@
       bars +=
         '<rect x="' + x0 + '" y="' + aTop + '" width="' + barW + '" height="' + aH + '" fill="var(--fg-muted)" rx="2"></rect>' +
         '<rect x="' + (x0 + barW + 4) + '" y="' + bTop + '" width="' + barW + '" height="' + bH + '" fill="var(--accent)" rx="2"></rect>' +
-        '<text x="' + (x0 + barW / 2) + '" y="' + Math.max(aTop - 4, 9) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(seriesA[i]) + '</text>' +
-        '<text x="' + (x0 + barW + 4 + barW / 2) + '" y="' + Math.max(bTop - 4, 9) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(seriesB[i]) + '</text>' +
+        '<text x="' + (x0 + barW / 2) + '" y="' + Math.max(aTop - 4, 9) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatEokWonLabel(seriesA[i]) + '</text>' +
+        '<text x="' + (x0 + barW + 4 + barW / 2) + '" y="' + Math.max(bTop - 4, 9) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatEokWonLabel(seriesB[i]) + '</text>' +
         '<text x="' + (x0 + barW) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
     });
 
@@ -1211,8 +1239,8 @@
       const maPt = toXY(maSeries, i);
       // 종가는 점 위쪽, 이동평균은 점 아래쪽에 라벨을 둬서 서로 안 겹치게 함
       valueSvg +=
-        '<text x="' + pricePt.x.toFixed(1) + '" y="' + Math.max(pricePt.y - 7, 9).toFixed(1) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(priceSeries[i]) + '</text>' +
-        '<text x="' + maPt.x.toFixed(1) + '" y="' + Math.min(maPt.y + 13, h - padB - 3).toFixed(1) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(maSeries[i]) + '</text>';
+        '<text x="' + pricePt.x.toFixed(1) + '" y="' + Math.max(pricePt.y - 7, 9).toFixed(1) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(priceSeries[i]) + '원</text>' +
+        '<text x="' + maPt.x.toFixed(1) + '" y="' + Math.min(maPt.y + 13, h - padB - 3).toFixed(1) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(maSeries[i]) + '원</text>';
     });
 
     return (
