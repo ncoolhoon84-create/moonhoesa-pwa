@@ -497,7 +497,7 @@
     </section>
 
     <section id="financialsCard" class="card" hidden>
-      <h3 class="section-title">매출·순이익 추이</h3>
+      <h3 class="section-title">매출·순이익 추이 <span id="financialsSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
       <div id="financialsChart" class="chart-box"></div>
       <div class="legend">
         <span><i class="dot revenue"></i>매출</span>
@@ -738,6 +738,55 @@
     }
   }
 
+  /* ============================================================
+     매출·순이익 — DART(전자공시) Open API 연동.
+     같은 저장소에 올려둔 corp_code_map.json(종목코드 -> DART 고유번호)을
+     한 번만 불러와서 캐싱하고, naver-proxy Worker의 ?mode=dart 경로로
+     실제 재무 데이터를 가져옴.
+  ============================================================ */
+  let corpCodeMapCache = null;
+
+  async function loadCorpCodeMap() {
+    if (corpCodeMapCache) return corpCodeMapCache;
+    try {
+      const res = await fetch('corp_code_map.json');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      corpCodeMapCache = await res.json();
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] corp_code_map.json 로드 실패:', err);
+      corpCodeMapCache = {};
+    }
+    return corpCodeMapCache;
+  }
+
+  // 반환: {years, revenue, profit} 또는 null(매핑에 없거나 조회 실패 → 데모 유지)
+  async function fetchRealFinancials(code) {
+    const map = await loadCorpCodeMap();
+    const entry = map[code];
+    if (!entry || !entry.corp_code) return null;
+
+    try {
+      const url = PROXY_BASE_URL + '/?mode=dart&corp_code=' + encodeURIComponent(entry.corp_code);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+
+      const hasRevenue = Array.isArray(data.revenue) && data.revenue.some((v) => v !== null && v !== undefined);
+      const hasProfit = Array.isArray(data.profit) && data.profit.some((v) => v !== null && v !== undefined);
+      if (!data.years || (!hasRevenue && !hasProfit)) return null;
+
+      // 차트 렌더 함수는 null을 못 다루니 0으로 채워서 넘김
+      return {
+        years: data.years,
+        revenue: (data.revenue || []).map((v) => v ?? 0),
+        profit: (data.profit || []).map((v) => v ?? 0)
+      };
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 실시간 매출·순이익 조회 실패, 데모 데이터로 표시합니다:', err);
+      return null;
+    }
+  }
+
   // ---------- DOM refs ----------
   const searchInput = document.getElementById('stockSearch');
   const acList = document.getElementById('autocompleteList');
@@ -888,6 +937,23 @@
         // 섹터 딕셔너리에 없는 종목이거나 조회 실패 → 데모 목록 유지
         similarSourceTag.textContent = '데모';
         similarSourceTag.className = 'data-source-tag demo';
+      }
+    });
+
+    const financialsSourceTag = document.getElementById('financialsSourceTag');
+    financialsSourceTag.textContent = '불러오는 중…';
+    financialsSourceTag.className = 'data-source-tag loading';
+
+    fetchRealFinancials(code).then((real) => {
+      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+      if (real) {
+        document.getElementById('financialsChart').innerHTML =
+          renderBarChart(real.years, real.revenue, real.profit);
+        financialsSourceTag.textContent = '실시간';
+        financialsSourceTag.className = 'data-source-tag live';
+      } else {
+        financialsSourceTag.textContent = '데모';
+        financialsSourceTag.className = 'data-source-tag demo';
       }
     });
   }
