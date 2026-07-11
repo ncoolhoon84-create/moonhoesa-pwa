@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#0b0d10" />
+<meta name="theme-color" content="#150f1f" />
 <title>무슨회사겠지 뭐</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="icon-192.png" />
@@ -13,19 +13,21 @@
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #0b0d10;
-    --bg-elevated: #14171c;
-    --bg-card: #12151a;
-    --border: rgba(255,255,255,0.08);
-    --border-strong: rgba(255,255,255,0.14);
-    --fg: #e8e6e1;
-    --fg-muted: #8b9099;
-    --fg-faint: #565b64;
-    --accent: #e8a33d;
-    --accent-dim: rgba(232,163,61,0.14);
-    --up: #e05a4e;   /* 한국 증시 관례: 상승 = 빨강 */
-    --down: #4f8ef7; /* 하락 = 파랑 */
-    --radius: 14px;
+    --bg: #150f1f;
+    --bg-elevated: #201733;
+    --bg-card: #1b1329;
+    --border: rgba(255,255,255,0.10);
+    --border-strong: rgba(255,255,255,0.18);
+    --fg: #f5eefc;
+    --fg-muted: #a394c2;
+    --fg-faint: #6b5d8a;
+    --accent: #ff5da2;
+    --accent-dim: rgba(255,93,162,0.18);
+    --pop-blue: #3ec6ff;
+    --pop-green: #b6f000;
+    --up: #ff4d6d;   /* 한국 증시 관례: 상승 = 빨강(조금 더 쨍하게) */
+    --down: #3ec6ff; /* 하락 = 파랑 */
+    --radius: 18px;
     --serif: 'Source Serif 4', Georgia, serif;
     --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
   }
@@ -116,7 +118,7 @@
     gap: 8px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 14px;
     padding: 10px 12px;
   }
 
@@ -152,7 +154,7 @@
     list-style: none;
     background: var(--bg-elevated);
     border: 1px solid var(--border-strong);
-    border-radius: 10px;
+    border-radius: 14px;
     box-shadow: 0 12px 28px rgba(0,0,0,0.4);
     max-height: 260px;
     overflow-y: auto;
@@ -163,7 +165,7 @@
     justify-content: space-between;
     align-items: baseline;
     padding: 9px 10px;
-    border-radius: 7px;
+    border-radius: 10px;
     cursor: pointer;
     font-size: 0.92rem;
   }
@@ -227,7 +229,7 @@
     text-align: right;
     background: var(--accent-dim);
     border: 1px solid rgba(232,163,61,0.35);
-    border-radius: 10px;
+    border-radius: 14px;
     padding: 6px 12px;
   }
 
@@ -303,7 +305,17 @@
     border: 1px solid var(--border-strong);
     border-radius: 999px;
     color: var(--fg-muted);
+    transition: transform 0.15s ease;
   }
+
+  .chip:hover {
+    transform: translateY(-2px) rotate(-1deg);
+  }
+
+  .chip:nth-child(4n+1) { border-color: rgba(255,93,162,0.4); color: var(--accent); }
+  .chip:nth-child(4n+2) { border-color: rgba(62,198,255,0.4); color: var(--pop-blue); }
+  .chip:nth-child(4n+3) { border-color: rgba(182,240,0,0.4); color: var(--pop-green); }
+  .chip:nth-child(4n+4) { border-color: rgba(255,93,162,0.4); color: var(--accent); }
 
   .section-title {
     margin: 0 0 14px;
@@ -312,6 +324,10 @@
     padding-left: 10px;
     border-left: 3px solid var(--accent);
   }
+
+  #outlookCard .section-title { border-left-color: var(--pop-blue); }
+  #financialsCard .section-title { border-left-color: var(--pop-green); }
+  #newsCard .section-title { border-left-color: var(--pop-blue); }
 
   .chart-box { width: 100%; }
   .chart-box svg { width: 100%; height: auto; display: block; }
@@ -457,6 +473,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     .cursor { animation: none; opacity: 1; }
+    .chip { transition: none; }
+    .chip:hover { transform: none; }
   }
 </style>
 </head>
@@ -465,7 +483,7 @@
 
   <header class="topbar">
     <div class="brand">
-      <h1>무슨회사겠지 뭐<span class="cursor">▌</span></h1>
+      <h1>무슨회사겠지 뭐 🤷<span class="cursor">▌</span></h1>
       <p class="tagline">종목 하나 넣으면, 이 회사가 뭐 하는 곳인지부터 우량주인지까지</p>
     </div>
     <div class="search-wrap">
@@ -477,8 +495,8 @@
 
   <main>
     <div id="emptyState" class="empty-state">
-      <p>아직 조회한 종목이 없어요.</p>
-      <p class="empty-sub">위 검색창에 종목명이나 코드를 입력해보세요.</p>
+      <p>음... 아직 아무것도 안 물어보셨네요 👀</p>
+      <p class="empty-sub">위 검색창에 종목명이나 코드를 입력해보세요 🔍</p>
     </div>
 
     <section id="companyCard" class="card" hidden>
@@ -486,7 +504,7 @@
         <div>
           <h2 id="companyName"></h2>
           <span id="companyCode" class="mono muted"></span>
-          <span id="dataSourceTag" class="data-source-tag demo">데모</span>
+          <span id="dataSourceTag" class="data-source-tag demo">🧊데모</span>
         </div>
         <div class="marketcap-pill">
           <span class="label">시가총액</span>
@@ -495,18 +513,18 @@
       </div>
       <p id="companyOverview" class="overview"></p>
       <div class="similar-wrap">
-        <span class="label">비슷한 회사 (같은 섹터) <span id="similarSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></span>
+        <span class="label">비슷한 회사 (같은 섹터) <span id="similarSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></span>
         <div id="similarChips" class="chip-row"></div>
       </div>
     </section>
 
     <section id="outlookCard" class="card" hidden>
-      <h3 class="section-title">업종 미래 전망 <span id="outlookSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
+      <h3 class="section-title">업종 미래 전망 <span id="outlookSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
       <p id="outlookText" style="margin:0; line-height:1.65; font-size:0.92rem;"></p>
     </section>
 
     <section id="financialsCard" class="card" hidden>
-      <h3 class="section-title">매출·순이익 추이 <span id="financialsSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
+      <h3 class="section-title">매출·순이익 추이 <span id="financialsSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
       <div id="financialsChart" class="chart-box"></div>
       <div class="legend">
         <span><i class="dot revenue"></i>매출</span>
@@ -517,7 +535,7 @@
     </section>
 
     <section id="maCard" class="card" hidden>
-      <h3 class="section-title">이동평균선 (월봉 5개월) <span id="maSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
+      <h3 class="section-title">이동평균선 (월봉 5개월) <span id="maSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
       <div id="maChart" class="chart-box"></div>
       <div class="legend">
         <span><i class="dot price"></i>월봉 종가</span>
@@ -526,7 +544,7 @@
     </section>
 
     <section id="newsCard" class="card" hidden>
-      <h3 class="section-title">관련 뉴스 <span id="newsSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
+      <h3 class="section-title">관련 뉴스 <span id="newsSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
       <ul id="newsList" class="news-list"></ul>
     </section>
   </main>
@@ -580,9 +598,9 @@
         ma5: [70200, 71800, 73900, 76600, 78900]
       },
       news: [
-        { title: 'AI 서버향 고대역폭 메모리 수요 확대, 하반기 실적 개선 기대', source: '데모뉴스 · 경제' },
-        { title: '파운드리 신규 수주 발표, 시장 반응은 엇갈려', source: '데모뉴스 · 산업' },
-        { title: '가전 사업부 실적 부진, 스마트폰은 소폭 회복', source: '데모뉴스 · 기업' }
+        { title: 'AI 서버향 고대역폭 메모리 수요 확대, 하반기 실적 개선 기대', source: '🧊데모뉴스 · 경제' },
+        { title: '파운드리 신규 수주 발표, 시장 반응은 엇갈려', source: '🧊데모뉴스 · 산업' },
+        { title: '가전 사업부 실적 부진, 스마트폰은 소폭 회복', source: '🧊데모뉴스 · 기업' }
       ]
     },
     '010120': {
@@ -604,9 +622,9 @@
         ma5: [210000, 221000, 238000, 254000, 268000]
       },
       news: [
-        { title: '미국 전력망 인프라 투자 확대, 수혜 기대감 지속', source: '데모뉴스 · 산업' },
-        { title: '2분기 수주잔고 역대 최대치 경신', source: '데모뉴스 · 기업' },
-        { title: '밸류에이션 부담론 vs 실적 성장론, 증권가 시각 엇갈려', source: '데모뉴스 · 증권' }
+        { title: '미국 전력망 인프라 투자 확대, 수혜 기대감 지속', source: '🧊데모뉴스 · 산업' },
+        { title: '2분기 수주잔고 역대 최대치 경신', source: '🧊데모뉴스 · 기업' },
+        { title: '밸류에이션 부담론 vs 실적 성장론, 증권가 시각 엇갈려', source: '🧊데모뉴스 · 증권' }
       ]
     },
     '035420': {
@@ -628,9 +646,9 @@
         ma5: [172000, 176000, 183000, 188000, 194000]
       },
       news: [
-        { title: 'AI 검색 결합 커머스 서비스 확대 발표', source: '데모뉴스 · IT' },
-        { title: '일본 법인 실적 개선, 해외 비중 확대', source: '데모뉴스 · 기업' },
-        { title: '광고 부문 성장률 둔화, 신사업 전환 속도가 관건', source: '데모뉴스 · 증권' }
+        { title: 'AI 검색 결합 커머스 서비스 확대 발표', source: '🧊데모뉴스 · IT' },
+        { title: '일본 법인 실적 개선, 해외 비중 확대', source: '🧊데모뉴스 · 기업' },
+        { title: '광고 부문 성장률 둔화, 신사업 전환 속도가 관건', source: '🧊데모뉴스 · 증권' }
       ]
     }
   };
@@ -1081,7 +1099,7 @@
     document.getElementById('companyCode').textContent = c.code;
     document.getElementById('marketCap').textContent = c.marketCap;
     document.getElementById('companyOverview').textContent = c.overview;
-    sourceTag.textContent = '불러오는 중…';
+    sourceTag.textContent = '🔍찾는 중…';
     sourceTag.className = 'data-source-tag loading';
 
     const chipsEl = document.getElementById('similarChips');
@@ -1123,7 +1141,7 @@
     // 2) 기업개요/시가총액과 비슷한 회사를 동시에 백그라운드 조회
     //    (매출순이익/이동평균/뉴스는 아직 데모 유지)
     const similarSourceTag = document.getElementById('similarSourceTag');
-    similarSourceTag.textContent = '불러오는 중…';
+    similarSourceTag.textContent = '🔍찾는 중…';
     similarSourceTag.className = 'data-source-tag loading';
 
     fetchRealOverview(code).then((real) => {
@@ -1131,10 +1149,10 @@
       if (real && (real.overview || real.marketCap)) {
         if (real.overview) document.getElementById('companyOverview').textContent = real.overview;
         if (real.marketCap) document.getElementById('marketCap').textContent = formatMarketCap(real.marketCap);
-        sourceTag.textContent = '실시간';
+        sourceTag.textContent = '🔥실시간';
         sourceTag.className = 'data-source-tag live';
       } else {
-        sourceTag.textContent = '데모 (실시간 실패)';
+        sourceTag.textContent = '🧊데모(실패)';
         sourceTag.className = 'data-source-tag demo';
       }
     });
@@ -1149,17 +1167,17 @@
           span.textContent = name;
           chipsEl.appendChild(span);
         });
-        similarSourceTag.textContent = '실시간';
+        similarSourceTag.textContent = '🔥실시간';
         similarSourceTag.className = 'data-source-tag live';
       } else {
         // 섹터 딕셔너리에 없는 종목이거나 조회 실패 → 데모 목록 유지
-        similarSourceTag.textContent = '데모';
+        similarSourceTag.textContent = '🧊데모';
         similarSourceTag.className = 'data-source-tag demo';
       }
     });
 
     const financialsSourceTag = document.getElementById('financialsSourceTag');
-    financialsSourceTag.textContent = '불러오는 중…';
+    financialsSourceTag.textContent = '🔍찾는 중…';
     financialsSourceTag.className = 'data-source-tag loading';
 
     let financialsDartData = null;
@@ -1193,7 +1211,7 @@
       if (real) {
         financialsDartData = real;
         renderCombinedFinancials();
-        financialsSourceTag.textContent = '실시간';
+        financialsSourceTag.textContent = '🔥실시간';
         financialsSourceTag.className = 'data-source-tag live';
 
         if (real.quarterLabel && (real.quarterRevenue !== null || real.quarterOperatingProfit !== null || real.quarterProfit !== null)) {
@@ -1207,7 +1225,7 @@
           quarterEl.hidden = true;
         }
       } else {
-        financialsSourceTag.textContent = '데모';
+        financialsSourceTag.textContent = '🧊데모';
         financialsSourceTag.className = 'data-source-tag demo';
         quarterEl.hidden = true;
       }
@@ -1215,9 +1233,9 @@
 
     const outlookSourceTag = document.getElementById('outlookSourceTag');
     const newsSourceTag = document.getElementById('newsSourceTag');
-    outlookSourceTag.textContent = '불러오는 중…';
+    outlookSourceTag.textContent = '🔍찾는 중…';
     outlookSourceTag.className = 'data-source-tag loading';
-    newsSourceTag.textContent = '불러오는 중…';
+    newsSourceTag.textContent = '🔍찾는 중…';
     newsSourceTag.className = 'data-source-tag loading';
 
     fetchRealOutlookAndNews(c.name).then((real) => {
@@ -1225,10 +1243,10 @@
 
       if (real && real.summary) {
         document.getElementById('outlookText').textContent = real.summary;
-        outlookSourceTag.textContent = '실시간';
+        outlookSourceTag.textContent = '🔥실시간';
         outlookSourceTag.className = 'data-source-tag live';
       } else {
-        outlookSourceTag.textContent = '데모';
+        outlookSourceTag.textContent = '🧊데모';
         outlookSourceTag.className = 'data-source-tag demo';
       }
 
@@ -1243,16 +1261,16 @@
           li.innerHTML = titleHtml + '<span class="news-source">구글뉴스</span>';
           newsEl.appendChild(li);
         });
-        newsSourceTag.textContent = '실시간';
+        newsSourceTag.textContent = '🔥실시간';
         newsSourceTag.className = 'data-source-tag live';
       } else {
-        newsSourceTag.textContent = '데모';
+        newsSourceTag.textContent = '🧊데모';
         newsSourceTag.className = 'data-source-tag demo';
       }
     });
 
     const maSourceTag = document.getElementById('maSourceTag');
-    maSourceTag.textContent = '불러오는 중…';
+    maSourceTag.textContent = '🔍찾는 중…';
     maSourceTag.className = 'data-source-tag loading';
 
     fetchRealMovingAverage(code).then((real) => {
@@ -1260,10 +1278,10 @@
       if (real) {
         document.getElementById('maChart').innerHTML =
           renderLineChart(real.months, real.price, real.ma5);
-        maSourceTag.textContent = '실시간';
+        maSourceTag.textContent = '🔥실시간';
         maSourceTag.className = 'data-source-tag live';
       } else {
-        maSourceTag.textContent = '데모';
+        maSourceTag.textContent = '🧊데모';
         maSourceTag.className = 'data-source-tag demo';
       }
     });
@@ -1433,7 +1451,7 @@
       const li = document.createElement('li');
       li.className = 'mono muted';
       li.style.cursor = 'default';
-      li.textContent = '아직 히스토리가 없어요.';
+      li.textContent = '아직 발자국이 없어요 👣';
       historyList.appendChild(li);
       return;
     }
