@@ -747,14 +747,17 @@
   }
 
   /* ============================================================
-     업종 미래 전망 + 관련 뉴스 — 이미 만들어져 있는 naver-proxy의
-     ?mode=opinion 엔드포인트를 그대로 재사용. 이 엔드포인트이
-     구글뉴스 헤드라인 조회 + Claude 요약을 한 번에 해주기 때문에,
-     Worker 코드를 새로 안 고쳐도 됨.
+     업종 미래 전망 + 관련 뉴스 — 다른 프로젝트("내 종목 우량주 체크")에서
+     이미 검증된 Vercel 서버리스 함수(stock-opinion-api)를 그대로 재사용.
+     naver-proxy의 ?mode=opinion은 Cloudflare Worker에서 Claude를 직접
+     호출하는 구조라 Anthropic이 Worker IP를 막아서(403) 응답 형태는
+     똑같이 {summary, headlines} 라서 호출 주소만 바꾸면 됨.
   ============================================================ */
+  const OPINION_API_URL = 'https://stock-opinion-api.vercel.app/api/opinion';
+
   async function fetchRealOutlookAndNews(name) {
     try {
-      const url = PROXY_BASE_URL + '/?mode=opinion&name=' + encodeURIComponent(name);
+      const url = OPINION_API_URL + '?name=' + encodeURIComponent(name);
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
