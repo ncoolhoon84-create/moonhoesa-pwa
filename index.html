@@ -334,6 +334,7 @@
   }
 
   .dot.revenue { background: var(--fg-muted); }
+  .dot.opprofit { background: var(--down); }
   .dot.profit { background: var(--accent); }
   .dot.price { background: var(--fg-muted); }
   .dot.ma { background: var(--accent); }
@@ -509,6 +510,7 @@
       <div id="financialsChart" class="chart-box"></div>
       <div class="legend">
         <span><i class="dot revenue"></i>매출</span>
+        <span><i class="dot opprofit"></i>영업이익</span>
         <span><i class="dot profit"></i>순이익</span>
         <span style="opacity:0.6;">▨ 반투명 = 뉴스 기반 추정치</span>
       </div>
@@ -571,6 +573,7 @@
       financials: {
         years: ['2022', '2023', '2024', '2025'],
         revenue: [3020000, 2590000, 3000000, 3180000],
+        operatingProfit: [430000, 65000, 380000, 450000],
         profit: [550000, 60000, 340000, 410000]
       },
       ma: {
@@ -594,6 +597,7 @@
       financials: {
         years: ['2022', '2023', '2024', '2025'],
         revenue: [34000, 39000, 45000, 51000],
+        operatingProfit: [2200, 3600, 5200, 6800],
         profit: [1500, 2800, 4100, 5200]
       },
       ma: {
@@ -617,6 +621,7 @@
       financials: {
         years: ['2022', '2023', '2024', '2025'],
         revenue: [82000, 91000, 102000, 110000],
+        operatingProfit: [15000, 17000, 19000, 20000],
         profit: [12000, 14000, 16000, 17000]
       },
       ma: {
@@ -880,9 +885,10 @@
             if (!e || typeof e !== 'object') return null;
             const year = typeof e.year === 'number' ? e.year : null;
             const revenue = typeof e.revenue_eok === 'number' ? e.revenue_eok : null;
+            const operatingProfit = typeof e.operating_profit_eok === 'number' ? e.operating_profit_eok : null;
             const profit = typeof e.profit_eok === 'number' ? e.profit_eok : null;
-            if (year === null || (revenue === null && profit === null)) return null;
-            return { year, revenue, profit };
+            if (year === null || (revenue === null && operatingProfit === null && profit === null)) return null;
+            return { year, revenue, operatingProfit, profit };
           })
           .filter(Boolean);
       }
@@ -932,19 +938,23 @@
       const data = await res.json();
 
       const hasRevenue = Array.isArray(data.revenue) && data.revenue.some((v) => v !== null && v !== undefined);
+      const hasOpProfit = Array.isArray(data.operatingProfit) && data.operatingProfit.some((v) => v !== null && v !== undefined);
       const hasProfit = Array.isArray(data.profit) && data.profit.some((v) => v !== null && v !== undefined);
-      if (!data.years || (!hasRevenue && !hasProfit)) return null;
+      if (!data.years || (!hasRevenue && !hasOpProfit && !hasProfit)) return null;
 
       // 차트 렌더 함수는 null을 못 다루니 0으로 채워서 넘김
       return {
         years: data.years,
         revenue: (data.revenue || []).map((v) => v ?? 0),
+        operatingProfit: (data.operatingProfit || []).map((v) => v ?? 0),
         profit: (data.profit || []).map((v) => v ?? 0),
         q1Label: data.q1Label || null,
         q1Revenue: data.q1Revenue ?? null,
+        q1OperatingProfit: data.q1OperatingProfit ?? null,
         q1Profit: data.q1Profit ?? null,
         quarterLabel: data.quarterLabel || null,
         quarterRevenue: data.quarterRevenue ?? null,
+        quarterOperatingProfit: data.quarterOperatingProfit ?? null,
         quarterProfit: data.quarterProfit ?? null
       };
     } catch (err) {
@@ -1048,7 +1058,7 @@
     outlookCard.hidden = false;
 
     document.getElementById('financialsChart').innerHTML =
-      renderBarChart(c.financials.years, c.financials.revenue, c.financials.profit);
+      renderBarChart(c.financials.years, c.financials.revenue, c.financials.operatingProfit, c.financials.profit);
     financialsCard.hidden = false;
 
     document.getElementById('maChart').innerHTML =
@@ -1119,42 +1129,50 @@
 
       const categories = [...financialsDartData.years];
       const revenueArr = [...financialsDartData.revenue];
+      const opArr = [...financialsDartData.operatingProfit];
       const profitArr = [...financialsDartData.profit];
       const isEstimateFlags = categories.map(() => false);
+      const unavailableFlags = categories.map(() => false);
 
       // 2026년 1분기처럼 이미 공시된 최신 분기 실적이 있으면 뒤에 실제값으로 추가
-      if (financialsDartData.q1Label && (financialsDartData.q1Revenue !== null || financialsDartData.q1Profit !== null)) {
+      if (
+        financialsDartData.q1Label &&
+        (financialsDartData.q1Revenue !== null || financialsDartData.q1OperatingProfit !== null || financialsDartData.q1Profit !== null)
+      ) {
         categories.push(financialsDartData.q1Label);
         revenueArr.push(financialsDartData.q1Revenue ?? 0);
+        opArr.push(financialsDartData.q1OperatingProfit ?? 0);
         profitArr.push(financialsDartData.q1Profit ?? 0);
         isEstimateFlags.push(false);
+        unavailableFlags.push(false);
       }
 
       // 뉴스에 명시된 연도별 추정치를 붙임. 올해(2026)/내년(2027) 두 자리는
       // 뉴스에서 못 찾았어도 "조회안됨"으로라도 항상 보여줌.
       const thisYear = new Date().getFullYear();
       const estimateYears = [thisYear, thisYear + 1];
-      const unavailableFlags = categories.map(() => false);
       let anyEstimateFound = false;
 
       estimateYears.forEach((yr) => {
         const est = financialsEstimates.find((e) => e.year === yr);
         categories.push(yr + '(뉴스추정)');
         isEstimateFlags.push(true);
-        if (est && (est.revenue !== null || est.profit !== null)) {
+        if (est && (est.revenue !== null || est.operatingProfit !== null || est.profit !== null)) {
           revenueArr.push(est.revenue ?? 0);
+          opArr.push(est.operatingProfit ?? 0);
           profitArr.push(est.profit ?? 0);
           unavailableFlags.push(false);
           anyEstimateFound = true;
         } else {
           revenueArr.push(0);
+          opArr.push(0);
           profitArr.push(0);
           unavailableFlags.push(true);
         }
       });
 
       document.getElementById('financialsChart').innerHTML =
-        renderBarChart(categories, revenueArr, profitArr, isEstimateFlags, unavailableFlags);
+        renderBarChart(categories, revenueArr, opArr, profitArr, isEstimateFlags, unavailableFlags);
 
       document.getElementById('financialsEstimateWarning').hidden = !anyEstimateFound;
     }
@@ -1168,9 +1186,10 @@
         financialsSourceTag.textContent = '실시간';
         financialsSourceTag.className = 'data-source-tag live';
 
-        if (real.quarterLabel && (real.quarterRevenue !== null || real.quarterProfit !== null)) {
+        if (real.quarterLabel && (real.quarterRevenue !== null || real.quarterOperatingProfit !== null || real.quarterProfit !== null)) {
           quarterEl.textContent =
             real.quarterLabel + ' 실적 · 매출 ' + formatEokWonLabel(real.quarterRevenue) +
+            ' · 영업이익 ' + formatEokWonLabel(real.quarterOperatingProfit) +
             ' · 순이익 ' + formatEokWonLabel(real.quarterProfit);
           quarterEl.hidden = false;
         } else {
@@ -1263,43 +1282,54 @@
     return Math.round(value).toLocaleString('ko-KR') + '억';
   }
 
-  function renderBarChart(labels, seriesA, seriesB, isEstimateFlags, unavailableFlags) {
-    const w = 500, h = 190, padL = 34, padB = 26, padT = 20, padR = 10;
+  function renderBarChart(labels, revenueArr, opArr, profitArr, isEstimateFlags, unavailableFlags) {
+    const w = 620, h = 250, padL = 30, padB = 26, padT = 62, padR = 10;
     const chartW = w - padL - padR;
     const chartH = h - padT - padB;
-    const maxVal = Math.max(...seriesA, ...seriesB, 1);
+    const maxVal = Math.max(...revenueArr, ...opArr, ...profitArr, 1);
     const groupW = chartW / labels.length;
-    const barW = groupW * 0.28;
+    const gap = groupW * 0.035;
+    const barW = (groupW * 0.66 - gap * 2) / 3;
+    const groupPad = groupW * 0.17; // 그룹 좌측 여백(막대 시작 위치)
 
     let bars = '';
     labels.forEach((label, i) => {
       const isEstimate = Array.isArray(isEstimateFlags) && isEstimateFlags[i];
       const isUnavailable = Array.isArray(unavailableFlags) && unavailableFlags[i];
-      const x0 = padL + i * groupW + groupW * 0.16;
+      const groupX0 = padL + i * groupW + groupPad;
+      const groupCenterX = groupX0 + (barW * 3 + gap * 2) / 2;
 
-      // 추정치를 뉴스에서 못 찾은 경우 — 막대 없이 "조회안됨" 텍스트만 표시
+      // 카테고리 이름은 항상 표시
+      bars += '<text x="' + (groupX0 + (barW * 3 + gap * 2) / 2) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+
       if (isUnavailable) {
-        bars +=
-          '<text x="' + (x0 + barW + 2) + '" y="' + (padT + chartH - 8) + '" font-size="8.5" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>' +
-          '<text x="' + (x0 + barW) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+        bars += '<text x="' + groupCenterX + '" y="' + (padT + chartH / 2) + '" font-size="9" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>';
         return;
       }
 
-      const aH = (seriesA[i] / maxVal) * chartH;
-      const bH = (seriesB[i] / maxVal) * chartH;
-      const aTop = padT + chartH - aH;
-      const bTop = padT + chartH - bH;
-      // 추정치 막대는 반투명 + 점선 테두리로 "확정 실적이 아님"을 시각적으로 구분
-      const aOpacity = isEstimate ? '0.4' : '1';
-      const bOpacity = isEstimate ? '0.4' : '1';
-      const dashAttr = isEstimate ? ' stroke="var(--fg-muted)" stroke-width="1" stroke-dasharray="3,2"' : '';
-      const dashAttrB = isEstimate ? ' stroke="var(--accent)" stroke-width="1" stroke-dasharray="3,2"' : '';
+      const revH = (revenueArr[i] / maxVal) * chartH;
+      const opH = (opArr[i] / maxVal) * chartH;
+      const profitH = (profitArr[i] / maxVal) * chartH;
+      const revTop = padT + chartH - revH;
+      const opTop = padT + chartH - opH;
+      const profitTop = padT + chartH - profitH;
+
+      const opacity = isEstimate ? '0.4' : '1';
+      const textOpacity = isEstimate ? '0.65' : '1';
+      const dash = isEstimate ? ' stroke-width="1" stroke-dasharray="3,2"' : '';
+
+      // 막대 3개: 매출(회색) / 영업이익(파랑) / 순이익(앰버)
       bars +=
-        '<rect x="' + x0 + '" y="' + aTop + '" width="' + barW + '" height="' + aH + '" fill="var(--fg-muted)" fill-opacity="' + aOpacity + '" rx="2"' + dashAttr + '></rect>' +
-        '<rect x="' + (x0 + barW + 4) + '" y="' + bTop + '" width="' + barW + '" height="' + bH + '" fill="var(--accent)" fill-opacity="' + bOpacity + '" rx="2"' + dashAttrB + '></rect>' +
-        '<text x="' + (x0 + barW / 2) + '" y="' + Math.max(aTop - 4, 9) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatEokWonLabel(seriesA[i]) + '</text>' +
-        '<text x="' + (x0 + barW + 4 + barW / 2) + '" y="' + Math.max(bTop - 4, 9) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatEokWonLabel(seriesB[i]) + '</text>' +
-        '<text x="' + (x0 + barW) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+        '<rect x="' + groupX0 + '" y="' + revTop + '" width="' + barW + '" height="' + revH + '" fill="var(--fg-muted)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--fg-muted)"' + dash : '') + '></rect>' +
+        '<rect x="' + (groupX0 + barW + gap) + '" y="' + opTop + '" width="' + barW + '" height="' + opH + '" fill="var(--down)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--down)"' + dash : '') + '></rect>' +
+        '<rect x="' + (groupX0 + (barW + gap) * 2) + '" y="' + profitTop + '" width="' + barW + '" height="' + profitH + '" fill="var(--accent)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--accent)"' + dash : '') + '></rect>';
+
+      // 막대 그룹 위쪽에 3줄 요약 텍스트: 매출 : x / 영업이익 : x / 순이익 : x
+      const lineY1 = 14, lineY2 = 26, lineY3 = 38;
+      bars +=
+        '<text x="' + groupCenterX + '" y="' + lineY1 + '" font-size="8.5" fill="var(--fg-muted)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">매출 : ' + formatEokWonLabel(revenueArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY2 + '" font-size="8.5" fill="var(--down)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">영업이익 : ' + formatEokWonLabel(opArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY3 + '" font-size="8.5" fill="var(--accent)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">순이익 : ' + formatEokWonLabel(profitArr[i]) + '</text>';
     });
 
     return (
