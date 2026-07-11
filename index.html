@@ -1140,8 +1140,13 @@
   }
 
   // ---------- SVG 차트 (외부 라이브러리 없이 직접 렌더) ----------
+  function formatChartNum(n) {
+    if (n === null || n === undefined || Number.isNaN(n)) return '';
+    return Math.round(n).toLocaleString('ko-KR');
+  }
+
   function renderBarChart(labels, seriesA, seriesB) {
-    const w = 500, h = 180, padL = 34, padB = 26, padT = 10, padR = 10;
+    const w = 500, h = 190, padL = 34, padB = 26, padT = 20, padR = 10;
     const chartW = w - padL - padR;
     const chartH = h - padT - padB;
     const maxVal = Math.max(...seriesA, ...seriesB, 1);
@@ -1153,9 +1158,13 @@
       const x0 = padL + i * groupW + groupW * 0.16;
       const aH = (seriesA[i] / maxVal) * chartH;
       const bH = (seriesB[i] / maxVal) * chartH;
+      const aTop = padT + chartH - aH;
+      const bTop = padT + chartH - bH;
       bars +=
-        '<rect x="' + x0 + '" y="' + (padT + chartH - aH) + '" width="' + barW + '" height="' + aH + '" fill="var(--fg-muted)" rx="2"></rect>' +
-        '<rect x="' + (x0 + barW + 4) + '" y="' + (padT + chartH - bH) + '" width="' + barW + '" height="' + bH + '" fill="var(--accent)" rx="2"></rect>' +
+        '<rect x="' + x0 + '" y="' + aTop + '" width="' + barW + '" height="' + aH + '" fill="var(--fg-muted)" rx="2"></rect>' +
+        '<rect x="' + (x0 + barW + 4) + '" y="' + bTop + '" width="' + barW + '" height="' + bH + '" fill="var(--accent)" rx="2"></rect>' +
+        '<text x="' + (x0 + barW / 2) + '" y="' + Math.max(aTop - 4, 9) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(seriesA[i]) + '</text>' +
+        '<text x="' + (x0 + barW + 4 + barW / 2) + '" y="' + Math.max(bTop - 4, 9) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(seriesB[i]) + '</text>' +
         '<text x="' + (x0 + barW) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
     });
 
@@ -1168,7 +1177,7 @@
   }
 
   function renderLineChart(labels, priceSeries, maSeries) {
-    const w = 500, h = 180, padL = 44, padB = 26, padT = 14, padR = 12;
+    const w = 500, h = 190, padL = 44, padB = 26, padT = 20, padR = 12;
     const chartW = w - padL - padR;
     const chartH = h - padT - padB;
     const allVals = priceSeries.concat(maSeries);
@@ -1177,20 +1186,33 @@
     const range = (maxVal - minVal) || 1;
     const stepX = chartW / (labels.length - 1);
 
+    function toXY(series, i) {
+      const x = padL + i * stepX;
+      const y = padT + chartH - ((series[i] - minVal) / range) * chartH;
+      return { x, y };
+    }
+
     function toPoints(series) {
       return series
         .map((v, i) => {
-          const x = padL + i * stepX;
-          const y = padT + chartH - ((v - minVal) / range) * chartH;
-          return x.toFixed(1) + ',' + y.toFixed(1);
+          const p = toXY(series, i);
+          return p.x.toFixed(1) + ',' + p.y.toFixed(1);
         })
         .join(' ');
     }
 
     let labelsSvg = '';
+    let valueSvg = '';
     labels.forEach((label, i) => {
       const x = padL + i * stepX;
       labelsSvg += '<text x="' + x + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+
+      const pricePt = toXY(priceSeries, i);
+      const maPt = toXY(maSeries, i);
+      // 종가는 점 위쪽, 이동평균은 점 아래쪽에 라벨을 둬서 서로 안 겹치게 함
+      valueSvg +=
+        '<text x="' + pricePt.x.toFixed(1) + '" y="' + Math.max(pricePt.y - 7, 9).toFixed(1) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(priceSeries[i]) + '</text>' +
+        '<text x="' + maPt.x.toFixed(1) + '" y="' + Math.min(maPt.y + 13, h - padB - 3).toFixed(1) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatChartNum(maSeries[i]) + '</text>';
     });
 
     return (
@@ -1199,6 +1221,7 @@
       '<polyline points="' + toPoints(priceSeries) + '" fill="none" stroke="var(--fg-muted)" stroke-width="2"></polyline>' +
       '<polyline points="' + toPoints(maSeries) + '" fill="none" stroke="var(--accent)" stroke-width="2.4"></polyline>' +
       labelsSvg +
+      valueSvg +
       '</svg>'
     );
   }
