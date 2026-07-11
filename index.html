@@ -486,7 +486,7 @@
       </div>
       <p id="companyOverview" class="overview"></p>
       <div class="similar-wrap">
-        <span class="label">비슷한 회사 (같은 섹터)</span>
+        <span class="label">비슷한 회사 (같은 섹터) <span id="similarSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></span>
         <div id="similarChips" class="chip-row"></div>
       </div>
     </section>
@@ -675,6 +675,69 @@
     }
   }
 
+  /* ============================================================
+     비슷한 회사 (같은 섹터) — market-rotation-desk 대시보드의
+     SECTOR_REPRESENTATIVE_STOCKS 딕셔너리를 그대로 재사용.
+     새 API 조사 없이, 같은 섹터의 다른 종목 코드를 찾은 다음
+     그 종목들의 "이름"만 fnguide 페이지에서 가볍게 조회해서 보여줌.
+  ============================================================ */
+  const SECTOR_REPRESENTATIVE_STOCKS = {
+    '반도체 (KODEX 반도체)': ['005930', '000660', '000990', '042700', '058470'],
+    '2차전지 (TIGER 2차전지테마)': ['373220', '006400', '096770', '247540', '003670'],
+    '바이오 (KODEX 헬스케어)': ['207940', '068270', '302440', '128940', '000100'],
+    '은행 (KODEX 은행)': ['105560', '055550', '086790', '316140', '323410'],
+    '조선 (TIGER 조선TOP10)': ['009540', '329180', '010140', '042660', '010620'],
+    '방산 (TIGER K방산&우주)': ['012450', '079550', '064350', '047810', '103140'],
+    '전력 (KODEX AI전력핵심설비)': ['010120', '298040', '103590', '267260', '034020'],
+    '자동차 (KODEX 자동차)': ['005380', '000270', '012330', '018880', '204320'],
+    '화학 (KODEX 에너지화학)': ['051910', '011170', '011780', '009830', '010950'],
+    '건설 (KODEX 건설)': ['028260', '000720', '006360', '375500', '047040'],
+    '철강 (KODEX 철강)': ['005490', '004020', '001230', '003030', '016380'],
+    '미디어·엔터 (TIGER 미디어컨텐츠)': ['352820', '035900', '041510', '122870', '035760'],
+    '화장품 (TIGER 화장품)': ['090430', '051900', '002790', '192820', '161890'],
+    '로봇 (KODEX 로봇액티브)': ['454910', '277810', '090360', '388720', '117730']
+  };
+
+  // 이 종목코드가 속한 섹터에서, 자기 자신을 뺀 나머지 종목코드 최대 4개
+  function findSectorSiblingCodes(code) {
+    for (const codes of Object.values(SECTOR_REPRESENTATIVE_STOCKS)) {
+      if (codes.includes(code)) {
+        return codes.filter((c) => c !== code).slice(0, 4);
+      }
+    }
+    return null; // 이 딕셔너리에 없는 종목 (데모 3종목 중 네이버 등)
+  }
+
+  // fnguide 기업현황 페이지에서 회사 이름만 가볍게 추출
+  function parseCompanyName(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const nameEl = doc.querySelector('span.name');
+    return nameEl ? nameEl.textContent.trim() : null;
+  }
+
+  async function fetchCompanyName(code) {
+    try {
+      const res = await fetch(buildProxyUrl(OVERVIEW_TARGET_BASE + code));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const html = await res.text();
+      return parseCompanyName(html) || code;
+    } catch (err) {
+      return code; // 이름 조회 실패 시 코드라도 표시
+    }
+  }
+
+  // 반환: 문자열 배열(회사 이름들) 또는 null(이 종목은 섹터 딕셔너리에 없음 → 데모 유지)
+  async function fetchRealSimilar(code) {
+    const siblingCodes = findSectorSiblingCodes(code);
+    if (!siblingCodes || siblingCodes.length === 0) return null;
+    try {
+      return await Promise.all(siblingCodes.map(fetchCompanyName));
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 비슷한 회사 조회 실패, 데모 데이터로 표시합니다:', err);
+      return null;
+    }
+  }
+
   // ---------- DOM refs ----------
   const searchInput = document.getElementById('stockSearch');
   const acList = document.getElementById('autocompleteList');
@@ -790,22 +853,43 @@
 
     addToHistory(c);
 
-    // 2) 기업개요/시가총액만 실제 API로 백그라운드 조회 후 교체
-    //    (비슷한회사/매출순이익/이동평균/뉴스는 아직 데모 유지)
-    const real = await fetchRealOverview(code);
+    // 2) 기업개요/시가총액과 비슷한 회사를 동시에 백그라운드 조회
+    //    (매출순이익/이동평균/뉴스는 아직 데모 유지)
+    const similarSourceTag = document.getElementById('similarSourceTag');
+    similarSourceTag.textContent = '불러오는 중…';
+    similarSourceTag.className = 'data-source-tag loading';
 
-    // 그 사이에 사용자가 다른 종목을 선택했으면 화면을 덮어쓰지 않음
-    if (document.getElementById('companyCode').textContent !== code) return;
+    fetchRealOverview(code).then((real) => {
+      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+      if (real && (real.overview || real.marketCap)) {
+        if (real.overview) document.getElementById('companyOverview').textContent = real.overview;
+        if (real.marketCap) document.getElementById('marketCap').textContent = real.marketCap;
+        sourceTag.textContent = '실시간';
+        sourceTag.className = 'data-source-tag live';
+      } else {
+        sourceTag.textContent = '데모 (실시간 실패)';
+        sourceTag.className = 'data-source-tag demo';
+      }
+    });
 
-    if (real && (real.overview || real.marketCap)) {
-      if (real.overview) document.getElementById('companyOverview').textContent = real.overview;
-      if (real.marketCap) document.getElementById('marketCap').textContent = real.marketCap;
-      sourceTag.textContent = '실시간';
-      sourceTag.className = 'data-source-tag live';
-    } else {
-      sourceTag.textContent = '데모 (실시간 실패)';
-      sourceTag.className = 'data-source-tag demo';
-    }
+    fetchRealSimilar(code).then((names) => {
+      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+      if (names && names.length > 0) {
+        chipsEl.innerHTML = '';
+        names.forEach((name) => {
+          const span = document.createElement('span');
+          span.className = 'chip';
+          span.textContent = name;
+          chipsEl.appendChild(span);
+        });
+        similarSourceTag.textContent = '실시간';
+        similarSourceTag.className = 'data-source-tag live';
+      } else {
+        // 섹터 딕셔너리에 없는 종목이거나 조회 실패 → 데모 목록 유지
+        similarSourceTag.textContent = '데모';
+        similarSourceTag.className = 'data-source-tag demo';
+      }
+    });
   }
 
   // ---------- SVG 차트 (외부 라이브러리 없이 직접 렌더) ----------
