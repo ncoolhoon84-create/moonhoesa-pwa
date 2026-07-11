@@ -353,6 +353,14 @@
 
   .news-list li:last-child { border-bottom: none; }
 
+  .news-list a {
+    text-decoration: none;
+  }
+
+  .news-list a:hover {
+    color: var(--accent);
+  }
+
   .news-source {
     display: block;
     font-family: var(--mono);
@@ -492,7 +500,7 @@
     </section>
 
     <section id="outlookCard" class="card" hidden>
-      <h3 class="section-title">업종 미래 전망</h3>
+      <h3 class="section-title">업종 미래 전망 <span id="outlookSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
       <p id="outlookText" style="margin:0; line-height:1.65; font-size:0.92rem;"></p>
     </section>
 
@@ -515,7 +523,7 @@
     </section>
 
     <section id="newsCard" class="card" hidden>
-      <h3 class="section-title">관련 뉴스</h3>
+      <h3 class="section-title">관련 뉴스 <span id="newsSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
       <ul id="newsList" class="news-list"></ul>
     </section>
   </main>
@@ -739,6 +747,33 @@
   }
 
   /* ============================================================
+     업종 미래 전망 + 관련 뉴스 — 이미 만들어져 있는 naver-proxy의
+     ?mode=opinion 엔드포인트를 그대로 재사용. 이 엔드포인트이
+     구글뉴스 헤드라인 조회 + Claude 요약을 한 번에 해주기 때문에,
+     Worker 코드를 새로 안 고쳐도 됨.
+  ============================================================ */
+  async function fetchRealOutlookAndNews(name) {
+    try {
+      const url = PROXY_BASE_URL + '/?mode=opinion&name=' + encodeURIComponent(name);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+
+      const hasSummary = typeof data.summary === 'string' && data.summary.trim().length > 0;
+      const hasNews = Array.isArray(data.headlines) && data.headlines.length > 0;
+      if (!hasSummary && !hasNews) return null;
+
+      return {
+        summary: hasSummary ? data.summary.trim() : null,
+        news: hasNews ? data.headlines : null
+      };
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 실시간 업종전망/뉴스 조회 실패, 데모 데이터로 표시합니다:', err);
+      return null;
+    }
+  }
+
+  /* ============================================================
      매출·순이익 — DART(전자공시) Open API 연동.
      같은 저장소에 올려둔 corp_code_map.json(종목코드 -> DART 고유번호)을
      한 번만 불러와서 캐싱하고, naver-proxy Worker의 ?mode=dart 경로로
@@ -954,6 +989,44 @@
       } else {
         financialsSourceTag.textContent = '데모';
         financialsSourceTag.className = 'data-source-tag demo';
+      }
+    });
+
+    const outlookSourceTag = document.getElementById('outlookSourceTag');
+    const newsSourceTag = document.getElementById('newsSourceTag');
+    outlookSourceTag.textContent = '불러오는 중…';
+    outlookSourceTag.className = 'data-source-tag loading';
+    newsSourceTag.textContent = '불러오는 중…';
+    newsSourceTag.className = 'data-source-tag loading';
+
+    fetchRealOutlookAndNews(c.name).then((real) => {
+      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+
+      if (real && real.summary) {
+        document.getElementById('outlookText').textContent = real.summary;
+        outlookSourceTag.textContent = '실시간';
+        outlookSourceTag.className = 'data-source-tag live';
+      } else {
+        outlookSourceTag.textContent = '데모';
+        outlookSourceTag.className = 'data-source-tag demo';
+      }
+
+      if (real && real.news) {
+        const newsEl = document.getElementById('newsList');
+        newsEl.innerHTML = '';
+        real.news.forEach((n) => {
+          const li = document.createElement('li');
+          const titleHtml = n.link
+            ? '<a href="' + escapeHtml(n.link) + '" target="_blank" rel="noopener">' + escapeHtml(n.title) + '</a>'
+            : '<span>' + escapeHtml(n.title) + '</span>';
+          li.innerHTML = titleHtml + '<span class="news-source">구글뉴스</span>';
+          newsEl.appendChild(li);
+        });
+        newsSourceTag.textContent = '실시간';
+        newsSourceTag.className = 'data-source-tag live';
+      } else {
+        newsSourceTag.textContent = '데모';
+        newsSourceTag.className = 'data-source-tag demo';
       }
     });
   }
