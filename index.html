@@ -247,6 +247,32 @@
     color: var(--accent);
   }
 
+  .data-source-tag {
+    display: inline-block;
+    margin-left: 8px;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    padding: 2px 7px;
+    border-radius: 999px;
+    vertical-align: middle;
+  }
+
+  .data-source-tag.loading {
+    color: var(--fg-faint);
+    border: 1px solid var(--border);
+  }
+
+  .data-source-tag.live {
+    color: var(--up);
+    border: 1px solid rgba(224,90,78,0.4);
+    background: rgba(224,90,78,0.08);
+  }
+
+  .data-source-tag.demo {
+    color: var(--fg-muted);
+    border: 1px solid var(--border-strong);
+  }
+
   .overview {
     margin: 0 0 16px;
     line-height: 1.65;
@@ -451,6 +477,7 @@
         <div>
           <h2 id="companyName"></h2>
           <span id="companyCode" class="mono muted"></span>
+          <span id="dataSourceTag" class="data-source-tag demo">데모</span>
         </div>
         <div class="marketcap-pill">
           <span class="label">시가총액</span>
@@ -597,6 +624,57 @@
   const HISTORY_KEY = 'moonhoesa_history_v1';
   const MAX_HISTORY = 20;
 
+  /* ============================================================
+     실제 API 연동 설정
+     ⚠️ PROXY_BASE_URL 뒤의 쿼리 파라미터 형식(?url=...)은
+     naver-proxy Worker 코드를 직접 확인 못 한 상태에서
+     가장 흔한 방식으로 가정한 것입니다.
+     만약 실제 Worker가 다른 방식(예: /proxy?target=, 경로 방식 등)을
+     쓴다면 이 buildProxyUrl() 함수 안의 return 문 한 줄만 고치면 됩니다.
+  ============================================================ */
+  const PROXY_BASE_URL = 'https://naver-proxy.ncoolhoon.workers.dev';
+  const OVERVIEW_TARGET_BASE = 'https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=';
+
+  function buildProxyUrl(targetUrl) {
+    return PROXY_BASE_URL + '/?url=' + encodeURIComponent(targetUrl);
+  }
+
+  // navercomp.wisereport.co.kr의 HTML 응답에서 기업개요/시가총액만 뽑아냄
+  function parseCompanyOverviewHtml(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const overview = Array.from(doc.querySelectorAll('li.dot_cmp'))
+      .map((li) => li.textContent.trim())
+      .filter(Boolean)
+      .join(' ');
+
+    let marketCap = '';
+    doc.querySelectorAll('table tr').forEach((tr) => {
+      const th = tr.querySelector('th');
+      if (th && th.textContent.trim() === '시가총액') {
+        const td = tr.querySelector('td');
+        if (td) marketCap = td.textContent.replace(/\s+/g, ' ').trim();
+      }
+    });
+
+    if (!overview && !marketCap) return null; // 아무것도 못 뽑았으면 실패로 간주
+    return { overview, marketCap };
+  }
+
+  // 실제 API 호출 (실패하면 null 반환 → 호출부에서 데모 데이터 유지)
+  async function fetchRealOverview(code) {
+    try {
+      const targetUrl = OVERVIEW_TARGET_BASE + code;
+      const res = await fetch(buildProxyUrl(targetUrl));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const html = await res.text();
+      return parseCompanyOverviewHtml(html);
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 실시간 기업개요 조회 실패, 데모 데이터로 표시합니다:', err);
+      return null;
+    }
+  }
+
   // ---------- DOM refs ----------
   const searchInput = document.getElementById('stockSearch');
   const acList = document.getElementById('autocompleteList');
@@ -662,16 +740,21 @@
   });
 
   // ---------- 종목 선택 → 전체 카드 렌더 ----------
-  function selectCompany(code) {
+  async function selectCompany(code) {
     const c = DEMO_DATA[code];
     if (!c) return;
 
     emptyState.hidden = true;
 
+    const sourceTag = document.getElementById('dataSourceTag');
+
+    // 1) 데모 데이터로 즉시 렌더 (화면이 비어 보이지 않게)
     document.getElementById('companyName').textContent = c.name;
     document.getElementById('companyCode').textContent = c.code;
     document.getElementById('marketCap').textContent = c.marketCap;
     document.getElementById('companyOverview').textContent = c.overview;
+    sourceTag.textContent = '불러오는 중…';
+    sourceTag.className = 'data-source-tag loading';
 
     const chipsEl = document.getElementById('similarChips');
     chipsEl.innerHTML = '';
@@ -706,6 +789,23 @@
     newsCard.hidden = false;
 
     addToHistory(c);
+
+    // 2) 기업개요/시가총액만 실제 API로 백그라운드 조회 후 교체
+    //    (비슷한회사/매출순이익/이동평균/뉴스는 아직 데모 유지)
+    const real = await fetchRealOverview(code);
+
+    // 그 사이에 사용자가 다른 종목을 선택했으면 화면을 덮어쓰지 않음
+    if (document.getElementById('companyCode').textContent !== code) return;
+
+    if (real && (real.overview || real.marketCap)) {
+      if (real.overview) document.getElementById('companyOverview').textContent = real.overview;
+      if (real.marketCap) document.getElementById('marketCap').textContent = real.marketCap;
+      sourceTag.textContent = '실시간';
+      sourceTag.className = 'data-source-tag live';
+    } else {
+      sourceTag.textContent = '데모 (실시간 실패)';
+      sourceTag.className = 'data-source-tag demo';
+    }
   }
 
   // ---------- SVG 차트 (외부 라이브러리 없이 직접 렌더) ----------
