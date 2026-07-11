@@ -478,7 +478,7 @@
   <main>
     <div id="emptyState" class="empty-state">
       <p>아직 조회한 종목이 없어요.</p>
-      <p class="empty-sub">위 검색창에 입력해보세요. 지금은 데모 데이터 3종목만 연결돼 있어요 — 삼성전자 / LS ELECTRIC / 네이버</p>
+      <p class="empty-sub">위 검색창에 종목명이나 코드를 입력해보세요.</p>
     </div>
 
     <section id="companyCard" class="card" hidden>
@@ -970,7 +970,36 @@
     );
   }
 
+  /* ============================================================
+     검색 자동완성 — m.stock.naver.com의 실시간 자동완성 API 재사용.
+     이 호스트도 naver-proxy에 이미 등록돼 있어서 Worker 코드는 안 고쳐도 됨.
+     category가 "stock"이고 nationCode가 "KOR"인 것만 남겨서
+     (ETF/펀드/해외종목 등은 제외) 국내 개별 종목만 보여줌.
+  ============================================================ */
+  const AUTOCOMPLETE_TARGET = 'https://m.stock.naver.com/front-api/search/autoComplete';
+
+  async function fetchStockAutocomplete(query) {
+    try {
+      const targetUrl =
+        AUTOCOMPLETE_TARGET + '?query=' + encodeURIComponent(query) +
+        '&target=stock,index,marketindicator,coin,ipo,fund';
+      const res = await fetch(buildProxyUrl(targetUrl));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const items = (data.result && Array.isArray(data.result.items)) ? data.result.items : [];
+      return items
+        .filter((it) => it.category === 'stock' && it.nationCode === 'KOR')
+        .map((it) => ({ code: it.code, name: it.name }));
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 자동완성 조회 실패:', err);
+      return [];
+    }
+  }
+
+  let lastAutocompleteResults = [];
+
   function renderAutocomplete(results) {
+    lastAutocompleteResults = results;
     acList.innerHTML = '';
     if (results.length === 0) {
       acList.hidden = true;
@@ -984,24 +1013,38 @@
       li.addEventListener('click', () => {
         searchInput.value = c.name;
         acList.hidden = true;
-        selectCompany(c.code);
+        selectCompany(c.code, c.name);
       });
       acList.appendChild(li);
     });
     acList.hidden = false;
   }
 
+  let autocompleteDebounceTimer = null;
+
   searchInput.addEventListener('input', (e) => {
-    renderAutocomplete(searchCompanies(e.target.value));
+    const query = e.target.value;
+    const trimmed = query.trim();
+
+    // 데모 3종목은 즉시 보여줘서 체감 속도를 살리고, 잠시 후 실시간 검색
+    // 결과가 오면 그걸로 교체함
+    renderAutocomplete(searchCompanies(query));
+
+    clearTimeout(autocompleteDebounceTimer);
+    if (!trimmed) return;
+
+    autocompleteDebounceTimer = setTimeout(async () => {
+      const results = await fetchStockAutocomplete(trimmed);
+      // 응답이 오는 사이 입력값이 바뀌었으면 이 결과는 버림 (오래된 응답 방지)
+      if (searchInput.value.trim() !== trimmed) return;
+      if (results.length > 0) renderAutocomplete(results);
+    }, 250);
   });
 
   searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      const results = searchCompanies(searchInput.value);
-      if (results.length > 0) {
-        acList.hidden = true;
-        selectCompany(results[0].code);
-      }
+    if (e.key === 'Enter' && lastAutocompleteResults.length > 0) {
+      acList.hidden = true;
+      selectCompany(lastAutocompleteResults[0].code, lastAutocompleteResults[0].name);
     }
   });
 
@@ -1009,16 +1052,31 @@
     if (!e.target.closest('.search-wrap')) acList.hidden = true;
   });
 
+  // 데모 데이터에 없는(실제 검색으로 찾은) 종목을 위한 임시 뼈대.
+  // 실시간 조회가 끝나는 대로 각 필드가 채워짐.
+  function makeStubCompany(code, name) {
+    return {
+      name: name || code,
+      code,
+      marketCap: '조회 중…',
+      overview: '실시간 데이터를 불러오는 중이에요…',
+      similar: [],
+      outlook: '조회 중…',
+      financials: { years: [], revenue: [], operatingProfit: [], profit: [] },
+      ma: { months: [], price: [], ma5: [] },
+      news: []
+    };
+  }
+
   // ---------- 종목 선택 → 전체 카드 렌더 ----------
-  async function selectCompany(code) {
-    const c = DEMO_DATA[code];
-    if (!c) return;
+  async function selectCompany(code, nameHint) {
+    const c = DEMO_DATA[code] || makeStubCompany(code, nameHint);
 
     emptyState.hidden = true;
 
     const sourceTag = document.getElementById('dataSourceTag');
 
-    // 1) 데모 데이터로 즉시 렌더 (화면이 비어 보이지 않게)
+    // 1) 데모(또는 임시) 데이터로 즉시 렌더 (화면이 비어 보이지 않게)
     document.getElementById('companyName').textContent = c.name;
     document.getElementById('companyCode').textContent = c.code;
     document.getElementById('marketCap').textContent = c.marketCap;
@@ -1039,12 +1097,14 @@
     document.getElementById('outlookText').textContent = c.outlook;
     outlookCard.hidden = false;
 
-    document.getElementById('financialsChart').innerHTML =
-      renderBarChart(c.financials.years, c.financials.revenue, c.financials.operatingProfit, c.financials.profit);
+    document.getElementById('financialsChart').innerHTML = c.financials.years.length
+      ? renderBarChart(c.financials.years, c.financials.revenue, c.financials.operatingProfit, c.financials.profit)
+      : '<p class="mono muted" style="margin:0; font-size:0.85rem;">조회 중…</p>';
     financialsCard.hidden = false;
 
-    document.getElementById('maChart').innerHTML =
-      renderLineChart(c.ma.months, c.ma.price, c.ma.ma5);
+    document.getElementById('maChart').innerHTML = c.ma.months.length
+      ? renderLineChart(c.ma.months, c.ma.price, c.ma.ma5)
+      : '<p class="mono muted" style="margin:0; font-size:0.85rem;">조회 중…</p>';
     maCard.hidden = false;
 
     const newsEl = document.getElementById('newsList');
@@ -1387,11 +1447,9 @@
         '</div>' +
         '<span class="history-time">' + formatRelativeTime(item.ts) + '</span>';
       li.addEventListener('click', () => {
-        if (DEMO_DATA[item.code]) {
-          searchInput.value = item.name;
-          selectCompany(item.code);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
+        searchInput.value = item.name;
+        selectCompany(item.code, item.name);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       });
       historyList.appendChild(li);
     });
