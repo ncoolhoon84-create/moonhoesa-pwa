@@ -1283,7 +1283,7 @@
   }
 
   function renderBarChart(labels, revenueArr, opArr, profitArr, isEstimateFlags, unavailableFlags) {
-    const w = 620, h = 250, padL = 30, padB = 26, padT = 62, padR = 10;
+    const w = 620, h = 270, padL = 30, padB = 26, padT = 74, padR = 10;
     const chartW = w - padL - padR;
     const chartH = h - padT - padB;
     const maxVal = Math.max(...revenueArr, ...opArr, ...profitArr, 1);
@@ -1300,10 +1300,10 @@
       const groupCenterX = groupX0 + (barW * 3 + gap * 2) / 2;
 
       // 카테고리 이름은 항상 표시
-      bars += '<text x="' + (groupX0 + (barW * 3 + gap * 2) / 2) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+      bars += '<text x="' + (groupX0 + (barW * 3 + gap * 2) / 2) + '" y="' + (h - 6) + '" font-size="11" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
 
       if (isUnavailable) {
-        bars += '<text x="' + groupCenterX + '" y="' + (padT + chartH / 2) + '" font-size="9" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>';
+        bars += '<text x="' + groupCenterX + '" y="' + (padT + chartH / 2) + '" font-size="10.5" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>';
         return;
       }
 
@@ -1315,7 +1315,7 @@
       const profitTop = padT + chartH - profitH;
 
       const opacity = isEstimate ? '0.4' : '1';
-      const textOpacity = isEstimate ? '0.65' : '1';
+      const textOpacity = isEstimate ? '0.7' : '1';
       const dash = isEstimate ? ' stroke-width="1" stroke-dasharray="3,2"' : '';
 
       // 막대 3개: 매출(회색) / 영업이익(파랑) / 순이익(앰버)
@@ -1324,12 +1324,12 @@
         '<rect x="' + (groupX0 + barW + gap) + '" y="' + opTop + '" width="' + barW + '" height="' + opH + '" fill="var(--down)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--down)"' + dash : '') + '></rect>' +
         '<rect x="' + (groupX0 + (barW + gap) * 2) + '" y="' + profitTop + '" width="' + barW + '" height="' + profitH + '" fill="var(--accent)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--accent)"' + dash : '') + '></rect>';
 
-      // 막대 그룹 위쪽에 3줄 요약 텍스트: 매출 : x / 영업이익 : x / 순이익 : x
-      const lineY1 = 14, lineY2 = 26, lineY3 = 38;
+      // 막대 그룹 위쪽에 색상 동그라미 + 금액만 표시 (항목명은 아래 범례로 대체)
+      const lineY1 = 18, lineY2 = 34, lineY3 = 50;
       bars +=
-        '<text x="' + groupCenterX + '" y="' + lineY1 + '" font-size="8.5" fill="var(--fg-muted)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">매출 : ' + formatEokWonLabel(revenueArr[i]) + '</text>' +
-        '<text x="' + groupCenterX + '" y="' + lineY2 + '" font-size="8.5" fill="var(--down)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">영업이익 : ' + formatEokWonLabel(opArr[i]) + '</text>' +
-        '<text x="' + groupCenterX + '" y="' + lineY3 + '" font-size="8.5" fill="var(--accent)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">순이익 : ' + formatEokWonLabel(profitArr[i]) + '</text>';
+        '<text x="' + groupCenterX + '" y="' + lineY1 + '" font-size="11.5" font-weight="600" fill="var(--fg-muted)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(revenueArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY2 + '" font-size="11.5" font-weight="600" fill="var(--down)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(opArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY3 + '" font-size="11.5" font-weight="600" fill="var(--accent)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(profitArr[i]) + '</text>';
     });
 
     return (
