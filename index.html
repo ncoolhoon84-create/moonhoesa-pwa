@@ -511,6 +511,7 @@
         <span><i class="dot revenue"></i>매출</span>
         <span><i class="dot profit"></i>순이익</span>
       </div>
+      <p id="financialsQuarter" class="mono muted" style="margin:10px 0 0; font-size:0.78rem;" hidden></p>
     </section>
 
     <section id="maCard" class="card" hidden>
@@ -921,7 +922,10 @@
       return {
         years: data.years,
         revenue: (data.revenue || []).map((v) => v ?? 0),
-        profit: (data.profit || []).map((v) => v ?? 0)
+        profit: (data.profit || []).map((v) => v ?? 0),
+        quarterLabel: data.quarterLabel || null,
+        quarterRevenue: data.quarterRevenue ?? null,
+        quarterProfit: data.quarterProfit ?? null
       };
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 실시간 매출·순이익 조회 실패, 데모 데이터로 표시합니다:', err);
@@ -1088,14 +1092,26 @@
 
     fetchRealFinancials(code).then((real) => {
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+      const quarterEl = document.getElementById('financialsQuarter');
       if (real) {
         document.getElementById('financialsChart').innerHTML =
           renderBarChart(real.years, real.revenue, real.profit);
         financialsSourceTag.textContent = '실시간';
         financialsSourceTag.className = 'data-source-tag live';
+
+        if (real.quarterLabel && (real.quarterRevenue !== null || real.quarterProfit !== null)) {
+          quarterEl.textContent =
+            real.quarterLabel + ' 실적 · 매출 ' + formatEokWonLabel(real.quarterRevenue) +
+            ' · 순이익 ' + formatEokWonLabel(real.quarterProfit);
+          quarterEl.hidden = false;
+        } else {
+          // 아직 반기보고서가 공시 전이면 조용히 숨김 (에러 아님)
+          quarterEl.hidden = true;
+        }
       } else {
         financialsSourceTag.textContent = '데모';
         financialsSourceTag.className = 'data-source-tag demo';
+        quarterEl.hidden = true;
       }
     });
 
