@@ -1300,10 +1300,10 @@
       const groupCenterX = groupX0 + (barW * 3 + gap * 2) / 2;
 
       // 카테고리 이름은 항상 표시
-      bars += '<text x="' + (groupX0 + (barW * 3 + gap * 2) / 2) + '" y="' + (h - 6) + '" font-size="11" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+      bars += '<text x="' + (groupX0 + (barW * 3 + gap * 2) / 2) + '" y="' + (h - 6) + '" font-size="11.5" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
 
       if (isUnavailable) {
-        bars += '<text x="' + groupCenterX + '" y="' + (padT + chartH / 2) + '" font-size="10.5" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>';
+        bars += '<text x="' + groupCenterX + '" y="' + (padT + chartH / 2) + '" font-size="11" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>';
         return;
       }
 
@@ -1325,11 +1325,11 @@
         '<rect x="' + (groupX0 + (barW + gap) * 2) + '" y="' + profitTop + '" width="' + barW + '" height="' + profitH + '" fill="var(--accent)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--accent)"' + dash : '') + '></rect>';
 
       // 막대 그룹 위쪽에 색상 동그라미 + 금액만 표시 (항목명은 아래 범례로 대체)
-      const lineY1 = 18, lineY2 = 34, lineY3 = 50;
+      const lineY1 = 20, lineY2 = 38, lineY3 = 56;
       bars +=
-        '<text x="' + groupCenterX + '" y="' + lineY1 + '" font-size="11.5" font-weight="600" fill="var(--fg-muted)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(revenueArr[i]) + '</text>' +
-        '<text x="' + groupCenterX + '" y="' + lineY2 + '" font-size="11.5" font-weight="600" fill="var(--down)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(opArr[i]) + '</text>' +
-        '<text x="' + groupCenterX + '" y="' + lineY3 + '" font-size="11.5" font-weight="600" fill="var(--accent)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(profitArr[i]) + '</text>';
+        '<text x="' + groupCenterX + '" y="' + lineY1 + '" font-size="13.5" font-weight="600" fill="var(--fg-muted)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(revenueArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY2 + '" font-size="13.5" font-weight="600" fill="var(--down)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(opArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY3 + '" font-size="13.5" font-weight="600" fill="var(--accent)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(profitArr[i]) + '</text>';
     });
 
     return (
