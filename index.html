@@ -514,7 +514,7 @@
     </section>
 
     <section id="maCard" class="card" hidden>
-      <h3 class="section-title">이동평균선 (월봉 5개월)</h3>
+      <h3 class="section-title">이동평균선 (월봉 5개월) <span id="maSourceTag" class="data-source-tag demo" style="margin-left:6px;">데모</span></h3>
       <div id="maChart" class="chart-box"></div>
       <div class="legend">
         <span><i class="dot price"></i>월봉 종가</span>
@@ -742,6 +742,94 @@
       return await Promise.all(siblingCodes.map(fetchCompanyName));
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 비슷한 회사 조회 실패, 데모 데이터로 표시합니다:', err);
+      return null;
+    }
+  }
+
+  /* ============================================================
+     이동평균선 (월봉 5개월) — 다른 프로젝트("내 종목 우량주 체크")에서
+     이미 검증된 m.stock.naver.com의 /price API를 그대로 재사용.
+     이 호스트는 naver-proxy의 ALLOWED_HOSTS에 이미 있어서 Worker 코드는
+     안 고쳐도 됨. pageSize 상한이 60이라(실측: 60 성공, 80 실패),
+     60개씩 여러 페이지로 나눠 요청해서 이어붙인 다음, 월별 마지막
+     거래일 종가로 월봉을 만들고 그 위에 5개월 이동평균을 직접 계산함.
+  ============================================================ */
+  async function fetchDailyPrices(code, totalDesired) {
+    const PAGE_CHUNK = 60;
+    let page = 1;
+    let all = [];
+
+    while (all.length < totalDesired) {
+      const targetUrl = `https://m.stock.naver.com/api/stock/${code}/price?pageSize=${PAGE_CHUNK}&page=${page}`;
+      let data;
+      try {
+        const res = await fetch(buildProxyUrl(targetUrl));
+        if (!res.ok) break;
+        data = await res.json();
+      } catch (err) {
+        break;
+      }
+      const list = Array.isArray(data) ? data : (data.items || data.result || []);
+      if (!list.length) break;
+      all = all.concat(list);
+      if (list.length < PAGE_CHUNK) break; // 마지막 페이지까지 다 가져옴
+      page += 1;
+    }
+
+    return all
+      .map((d) => ({
+        date: String(d.localTradedAt || d.date || '').replace(/-/g, ''),
+        close: parseFloat(String(d.closePrice ?? d.close ?? '').replace(/,/g, ''))
+      }))
+      .filter((d) => d.date.length >= 6 && !Number.isNaN(d.close))
+      .reverse(); // 과거 -> 최신 순으로
+  }
+
+  // 일봉 -> 월별 마지막 거래일 종가로 압축
+  function toMonthlyCloses(dailyPrices) {
+    const monthlyMap = {};
+    dailyPrices.forEach((d) => {
+      const ym = d.date.slice(0, 6); // YYYYMM
+      monthlyMap[ym] = d.close; // 오래된 -> 최신 순회라, 마지막에 덮어써진 값이 그 달 마지막 거래일 종가
+    });
+    return Object.keys(monthlyMap)
+      .sort()
+      .map((ym) => ({ ym, close: monthlyMap[ym] }));
+  }
+
+  // 월봉 종가 배열에 대한 N개월 단순 이동평균 (초반 N-1개월은 계산 불가라 null)
+  function computeMonthlyMA(monthly, window) {
+    return monthly.map((_, i) => {
+      if (i < window - 1) return null;
+      const slice = monthly.slice(i - window + 1, i + 1);
+      const sum = slice.reduce((s, m) => s + m.close, 0);
+      return sum / window;
+    });
+  }
+
+  // 반환: {months, price, ma5} 또는 null(데이터 부족/조회 실패 → 데모 유지)
+  async function fetchRealMovingAverage(code) {
+    try {
+      const dailyPrices = await fetchDailyPrices(code, 260); // 약 11~12개월치
+      if (dailyPrices.length < 40) return null; // 너무 적으면 신뢰하기 어려움
+
+      const monthly = toMonthlyCloses(dailyPrices);
+      const ma5 = computeMonthlyMA(monthly, 5);
+
+      const validIdx = [];
+      for (let i = 0; i < monthly.length; i++) {
+        if (ma5[i] !== null) validIdx.push(i);
+      }
+      if (validIdx.length === 0) return null;
+
+      const lastFive = validIdx.slice(-5);
+      const months = lastFive.map((i) => Number(monthly[i].ym.slice(4, 6)) + '월');
+      const price = lastFive.map((i) => monthly[i].close);
+      const ma = lastFive.map((i) => Math.round(ma5[i]));
+
+      return { months, price, ma5: ma };
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 실시간 이동평균선 조회 실패, 데모 데이터로 표시합니다:', err);
       return null;
     }
   }
@@ -1030,6 +1118,23 @@
       } else {
         newsSourceTag.textContent = '데모';
         newsSourceTag.className = 'data-source-tag demo';
+      }
+    });
+
+    const maSourceTag = document.getElementById('maSourceTag');
+    maSourceTag.textContent = '불러오는 중…';
+    maSourceTag.className = 'data-source-tag loading';
+
+    fetchRealMovingAverage(code).then((real) => {
+      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+      if (real) {
+        document.getElementById('maChart').innerHTML =
+          renderLineChart(real.months, real.price, real.ma5);
+        maSourceTag.textContent = '실시간';
+        maSourceTag.className = 'data-source-tag live';
+      } else {
+        maSourceTag.textContent = '데모';
+        maSourceTag.className = 'data-source-tag demo';
       }
     });
   }
