@@ -1130,19 +1130,33 @@
         isEstimateFlags.push(false);
       }
 
-      // 뉴스에 명시된 연도별 추정치가 있으면 반투명 막대로 연도순으로 추가
-      const sortedEstimates = [...financialsEstimates].sort((a, b) => a.year - b.year);
-      sortedEstimates.forEach((est) => {
-        categories.push(est.year + '(뉴스추정)');
-        revenueArr.push(est.revenue ?? 0);
-        profitArr.push(est.profit ?? 0);
+      // 뉴스에 명시된 연도별 추정치를 붙임. 올해(2026)/내년(2027) 두 자리는
+      // 뉴스에서 못 찾았어도 "조회안됨"으로라도 항상 보여줌.
+      const thisYear = new Date().getFullYear();
+      const estimateYears = [thisYear, thisYear + 1];
+      const unavailableFlags = categories.map(() => false);
+      let anyEstimateFound = false;
+
+      estimateYears.forEach((yr) => {
+        const est = financialsEstimates.find((e) => e.year === yr);
+        categories.push(yr + '(뉴스추정)');
         isEstimateFlags.push(true);
+        if (est && (est.revenue !== null || est.profit !== null)) {
+          revenueArr.push(est.revenue ?? 0);
+          profitArr.push(est.profit ?? 0);
+          unavailableFlags.push(false);
+          anyEstimateFound = true;
+        } else {
+          revenueArr.push(0);
+          profitArr.push(0);
+          unavailableFlags.push(true);
+        }
       });
 
       document.getElementById('financialsChart').innerHTML =
-        renderBarChart(categories, revenueArr, profitArr, isEstimateFlags);
+        renderBarChart(categories, revenueArr, profitArr, isEstimateFlags, unavailableFlags);
 
-      document.getElementById('financialsEstimateWarning').hidden = sortedEstimates.length === 0;
+      document.getElementById('financialsEstimateWarning').hidden = !anyEstimateFound;
     }
 
     fetchRealFinancials(code).then((real) => {
@@ -1249,7 +1263,7 @@
     return Math.round(value).toLocaleString('ko-KR') + '억';
   }
 
-  function renderBarChart(labels, seriesA, seriesB, isEstimateFlags) {
+  function renderBarChart(labels, seriesA, seriesB, isEstimateFlags, unavailableFlags) {
     const w = 500, h = 190, padL = 34, padB = 26, padT = 20, padR = 10;
     const chartW = w - padL - padR;
     const chartH = h - padT - padB;
@@ -1260,7 +1274,17 @@
     let bars = '';
     labels.forEach((label, i) => {
       const isEstimate = Array.isArray(isEstimateFlags) && isEstimateFlags[i];
+      const isUnavailable = Array.isArray(unavailableFlags) && unavailableFlags[i];
       const x0 = padL + i * groupW + groupW * 0.16;
+
+      // 추정치를 뉴스에서 못 찾은 경우 — 막대 없이 "조회안됨" 텍스트만 표시
+      if (isUnavailable) {
+        bars +=
+          '<text x="' + (x0 + barW + 2) + '" y="' + (padT + chartH - 8) + '" font-size="8.5" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>' +
+          '<text x="' + (x0 + barW) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+        return;
+      }
+
       const aH = (seriesA[i] / maxVal) * chartH;
       const bH = (seriesB[i] / maxVal) * chartH;
       const aTop = padT + chartH - aH;
