@@ -510,7 +510,9 @@
       <div class="legend">
         <span><i class="dot revenue"></i>매출</span>
         <span><i class="dot profit"></i>순이익</span>
+        <span style="opacity:0.6;">▨ 반투명 = 뉴스 기반 추정치</span>
       </div>
+      <p id="financialsEstimateWarning" class="mono" style="margin:8px 0 0; font-size:0.76rem; color:var(--up);" hidden>⚠️ 추정치는 뉴스기반으로 신뢰도가 낮음</p>
       <p id="financialsQuarter" class="mono muted" style="margin:10px 0 0; font-size:0.78rem;" hidden></p>
     </section>
 
@@ -871,9 +873,24 @@
       const hasNews = Array.isArray(data.headlines) && data.headlines.length > 0;
       if (!hasSummary && !hasNews) return null;
 
+      let estimates = [];
+      if (Array.isArray(data.estimates)) {
+        estimates = data.estimates
+          .map((e) => {
+            if (!e || typeof e !== 'object') return null;
+            const year = typeof e.year === 'number' ? e.year : null;
+            const revenue = typeof e.revenue_eok === 'number' ? e.revenue_eok : null;
+            const profit = typeof e.profit_eok === 'number' ? e.profit_eok : null;
+            if (year === null || (revenue === null && profit === null)) return null;
+            return { year, revenue, profit };
+          })
+          .filter(Boolean);
+      }
+
       return {
         summary: hasSummary ? data.summary.trim() : null,
-        news: hasNews ? data.headlines : null
+        news: hasNews ? data.headlines : null,
+        estimates
       };
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 실시간 업종전망/뉴스 조회 실패, 데모 데이터로 표시합니다:', err);
@@ -923,6 +940,9 @@
         years: data.years,
         revenue: (data.revenue || []).map((v) => v ?? 0),
         profit: (data.profit || []).map((v) => v ?? 0),
+        q1Label: data.q1Label || null,
+        q1Revenue: data.q1Revenue ?? null,
+        q1Profit: data.q1Profit ?? null,
         quarterLabel: data.quarterLabel || null,
         quarterRevenue: data.quarterRevenue ?? null,
         quarterProfit: data.quarterProfit ?? null
@@ -1089,13 +1109,48 @@
     const financialsSourceTag = document.getElementById('financialsSourceTag');
     financialsSourceTag.textContent = '불러오는 중…';
     financialsSourceTag.className = 'data-source-tag loading';
+    document.getElementById('financialsEstimateWarning').hidden = true;
+
+    let financialsDartData = null;
+    let financialsEstimates = [];
+
+    function renderCombinedFinancials() {
+      if (!financialsDartData) return; // DART 데이터가 없으면 데모 차트를 그대로 둠
+
+      const categories = [...financialsDartData.years];
+      const revenueArr = [...financialsDartData.revenue];
+      const profitArr = [...financialsDartData.profit];
+      const isEstimateFlags = categories.map(() => false);
+
+      // 2026년 1분기처럼 이미 공시된 최신 분기 실적이 있으면 뒤에 실제값으로 추가
+      if (financialsDartData.q1Label && (financialsDartData.q1Revenue !== null || financialsDartData.q1Profit !== null)) {
+        categories.push(financialsDartData.q1Label);
+        revenueArr.push(financialsDartData.q1Revenue ?? 0);
+        profitArr.push(financialsDartData.q1Profit ?? 0);
+        isEstimateFlags.push(false);
+      }
+
+      // 뉴스에 명시된 연도별 추정치가 있으면 반투명 막대로 연도순으로 추가
+      const sortedEstimates = [...financialsEstimates].sort((a, b) => a.year - b.year);
+      sortedEstimates.forEach((est) => {
+        categories.push(est.year + '(뉴스추정)');
+        revenueArr.push(est.revenue ?? 0);
+        profitArr.push(est.profit ?? 0);
+        isEstimateFlags.push(true);
+      });
+
+      document.getElementById('financialsChart').innerHTML =
+        renderBarChart(categories, revenueArr, profitArr, isEstimateFlags);
+
+      document.getElementById('financialsEstimateWarning').hidden = sortedEstimates.length === 0;
+    }
 
     fetchRealFinancials(code).then((real) => {
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
       const quarterEl = document.getElementById('financialsQuarter');
       if (real) {
-        document.getElementById('financialsChart').innerHTML =
-          renderBarChart(real.years, real.revenue, real.profit);
+        financialsDartData = real;
+        renderCombinedFinancials();
         financialsSourceTag.textContent = '실시간';
         financialsSourceTag.className = 'data-source-tag live';
 
@@ -1151,6 +1206,11 @@
         newsSourceTag.textContent = '데모';
         newsSourceTag.className = 'data-source-tag demo';
       }
+
+      // 업종전망 조회가 매출/순이익보다 늦게 끝나는 경우에도, DART 데이터가
+      // 이미 그려져 있으면 그 위에 추정치 막대만 추가로 얹어줌
+      financialsEstimates = (real && Array.isArray(real.estimates)) ? real.estimates : [];
+      renderCombinedFinancials();
     });
 
     const maSourceTag = document.getElementById('maSourceTag');
@@ -1189,7 +1249,7 @@
     return Math.round(value).toLocaleString('ko-KR') + '억';
   }
 
-  function renderBarChart(labels, seriesA, seriesB) {
+  function renderBarChart(labels, seriesA, seriesB, isEstimateFlags) {
     const w = 500, h = 190, padL = 34, padB = 26, padT = 20, padR = 10;
     const chartW = w - padL - padR;
     const chartH = h - padT - padB;
@@ -1199,14 +1259,20 @@
 
     let bars = '';
     labels.forEach((label, i) => {
+      const isEstimate = Array.isArray(isEstimateFlags) && isEstimateFlags[i];
       const x0 = padL + i * groupW + groupW * 0.16;
       const aH = (seriesA[i] / maxVal) * chartH;
       const bH = (seriesB[i] / maxVal) * chartH;
       const aTop = padT + chartH - aH;
       const bTop = padT + chartH - bH;
+      // 추정치 막대는 반투명 + 점선 테두리로 "확정 실적이 아님"을 시각적으로 구분
+      const aOpacity = isEstimate ? '0.4' : '1';
+      const bOpacity = isEstimate ? '0.4' : '1';
+      const dashAttr = isEstimate ? ' stroke="var(--fg-muted)" stroke-width="1" stroke-dasharray="3,2"' : '';
+      const dashAttrB = isEstimate ? ' stroke="var(--accent)" stroke-width="1" stroke-dasharray="3,2"' : '';
       bars +=
-        '<rect x="' + x0 + '" y="' + aTop + '" width="' + barW + '" height="' + aH + '" fill="var(--fg-muted)" rx="2"></rect>' +
-        '<rect x="' + (x0 + barW + 4) + '" y="' + bTop + '" width="' + barW + '" height="' + bH + '" fill="var(--accent)" rx="2"></rect>' +
+        '<rect x="' + x0 + '" y="' + aTop + '" width="' + barW + '" height="' + aH + '" fill="var(--fg-muted)" fill-opacity="' + aOpacity + '" rx="2"' + dashAttr + '></rect>' +
+        '<rect x="' + (x0 + barW + 4) + '" y="' + bTop + '" width="' + barW + '" height="' + bH + '" fill="var(--accent)" fill-opacity="' + bOpacity + '" rx="2"' + dashAttrB + '></rect>' +
         '<text x="' + (x0 + barW / 2) + '" y="' + Math.max(aTop - 4, 9) + '" font-size="8" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">' + formatEokWonLabel(seriesA[i]) + '</text>' +
         '<text x="' + (x0 + barW + 4 + barW / 2) + '" y="' + Math.max(bTop - 4, 9) + '" font-size="8" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">' + formatEokWonLabel(seriesB[i]) + '</text>' +
         '<text x="' + (x0 + barW) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
