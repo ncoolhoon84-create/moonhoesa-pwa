@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d10" />
+<title>무슨회사겠지 뭐</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0d10;
+    --bg-elevated: #14171c;
+    --bg-card: #12151a;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --fg: #e8e6e1;
+    --fg-muted: #8b9099;
+    --fg-faint: #565b64;
+    --accent: #e8a33d;
+    --accent-dim: rgba(232,163,61,0.14);
+    --up: #e05a4e;   /* 한국 증시 관례: 상승 = 빨강 */
+    --down: #4f8ef7; /* 하락 = 파랑 */
+    --radius: 14px;
+    --serif: 'Source Serif 4', Georgia, serif;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--serif);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  #app {
+    max-width: 560px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  @media (min-width: 640px) {
+    #app {
+      margin-top: 24px;
+      margin-bottom: 24px;
+      min-height: calc(100vh - 48px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.45);
+      overflow: hidden;
+    }
+  }
+
+  a { color: inherit; }
+
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--fg-muted); }
+
+  /* ---------- Header / Search ---------- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(11,13,16,0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 20px 16px;
+  }
+
+  .brand h1 {
+    margin: 0 0 4px;
+    font-size: clamp(1.35rem, 5vw, 1.7rem);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .cursor {
+    display: inline-block;
+    color: var(--accent);
+    animation: blink 1.1s steps(2, jump-none) infinite;
+    margin-left: 2px;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .tagline {
+    margin: 0 0 14px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+    line-height: 1.5;
+  }
+
+  .search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+
+  .search-wrap:focus-within {
+    border-color: var(--accent);
+  }
+
+  .prompt-label {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  #stockSearch {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 0.92rem;
+  }
+
+  #stockSearch::placeholder { color: var(--fg-faint); }
+
+  .autocomplete-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.4);
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .autocomplete-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 9px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 0.92rem;
+  }
+
+  .autocomplete-list li:hover,
+  .autocomplete-list li.active {
+    background: var(--accent-dim);
+  }
+
+  .autocomplete-list .ac-code {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--fg-muted);
+  }
+
+  /* ---------- Main / Cards ---------- */
+  main {
+    flex: 1;
+    padding: 18px 20px 4px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 12px;
+    color: var(--fg-muted);
+    font-family: var(--mono);
+  }
+
+  .empty-state p { margin: 0 0 8px; }
+  .empty-sub { font-size: 0.8rem; color: var(--fg-faint); }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  #companyName {
+    margin: 0 0 2px;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+
+  #companyCode {
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+  }
+
+  .marketcap-pill {
+    flex-shrink: 0;
+    text-align: right;
+    background: var(--accent-dim);
+    border: 1px solid rgba(232,163,61,0.35);
+    border-radius: 10px;
+    padding: 6px 12px;
+  }
+
+  .marketcap-pill .label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+  }
+
+  .marketcap-pill .mono {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .overview {
+    margin: 0 0 16px;
+    line-height: 1.65;
+    font-size: 0.94rem;
+    color: var(--fg);
+  }
+
+  .similar-wrap .label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    padding: 5px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    color: var(--fg-muted);
+  }
+
+  .section-title {
+    margin: 0 0 14px;
+    font-size: 1.02rem;
+    font-weight: 600;
+    padding-left: 10px;
+    border-left: 3px solid var(--accent);
+  }
+
+  .chart-box { width: 100%; }
+  .chart-box svg { width: 100%; height: auto; display: block; }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--fg-muted);
+  }
+
+  .legend .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+  }
+
+  .dot.revenue { background: var(--fg-muted); }
+  .dot.profit { background: var(--accent); }
+  .dot.price { background: var(--fg-muted); }
+  .dot.ma { background: var(--accent); }
+
+  .news-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .news-list li {
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .news-list li:last-child { border-bottom: none; }
+
+  .news-source {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--fg-faint);
+    margin-top: 3px;
+  }
+
+  /* ---------- History ---------- */
+  .history-card { margin: 0 20px 14px; }
+
+  .history-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--fg);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  #historyChevron {
+    color: var(--fg-muted);
+    transition: transform 0.2s ease;
+  }
+
+  .history-card.expanded #historyChevron {
+    transform: rotate(180deg);
+  }
+
+  .history-list {
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    display: none;
+  }
+
+  .history-card.expanded .history-list { display: block; }
+
+  .history-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+  }
+
+  .history-list li:hover .history-name { color: var(--accent); }
+
+  .history-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .history-snippet {
+    display: block;
+    font-size: 0.76rem;
+    color: var(--fg-muted);
+    margin-top: 2px;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .history-time {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--fg-faint);
+    flex-shrink: 0;
+  }
+
+  /* ---------- Footer ---------- */
+  .disclaimer {
+    padding: 16px 20px 22px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+
+  .disclaimer p {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    line-height: 1.6;
+    color: var(--fg-faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cursor { animation: none; opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>무슨회사겠지 뭐<span class="cursor">▌</span></h1>
+      <p class="tagline">종목 하나 넣으면, 이 회사가 뭐 하는 곳인지부터 우량주인지까지</p>
+    </div>
+    <div class="search-wrap">
+      <span class="prompt-label">&gt;</span>
+      <input id="stockSearch" type="text" placeholder="종목명 또는 코드 입력 (예: 삼성전자)" autocomplete="off" inputmode="search" />
+      <ul id="autocompleteList" class="autocomplete-list" hidden></ul>
+    </div>
+  </header>
+
+  <main>
+    <div id="emptyState" class="empty-state">
+      <p>아직 조회한 종목이 없어요.</p>
+      <p class="empty-sub">위 검색창에 입력해보세요. 지금은 데모 데이터 3종목만 연결돼 있어요 — 삼성전자 / LS ELECTRIC / 네이버</p>
+    </div>
+
+    <section id="companyCard" class="card" hidden>
+      <div class="card-head">
+        <div>
+          <h2 id="companyName"></h2>
+          <span id="companyCode" class="mono muted"></span>
+        </div>
+        <div class="marketcap-pill">
+          <span class="label">시가총액</span>
+          <span id="marketCap" class="mono"></span>
+        </div>
+      </div>
+      <p id="companyOverview" class="overview"></p>
+      <div class="similar-wrap">
+        <span class="label">비슷한 회사 (같은 섹터)</span>
+        <div id="similarChips" class="chip-row"></div>
+      </div>
+    </section>
+
+    <section id="outlookCard" class="card" hidden>
+      <h3 class="section-title">업종 미래 전망</h3>
+      <p id="outlookText" style="margin:0; line-height:1.65; font-size:0.92rem;"></p>
+    </section>
+
+    <section id="financialsCard" class="card" hidden>
+      <h3 class="section-title">매출·순이익 추이</h3>
+      <div id="financialsChart" class="chart-box"></div>
+      <div class="legend">
+        <span><i class="dot revenue"></i>매출</span>
+        <span><i class="dot profit"></i>순이익</span>
+      </div>
+    </section>
+
+    <section id="maCard" class="card" hidden>
+      <h3 class="section-title">이동평균선 (월봉 5개월)</h3>
+      <div id="maChart" class="chart-box"></div>
+      <div class="legend">
+        <span><i class="dot price"></i>월봉 종가</span>
+        <span><i class="dot ma"></i>5개월 이동평균</span>
+      </div>
+    </section>
+
+    <section id="newsCard" class="card" hidden>
+      <h3 class="section-title">관련 뉴스</h3>
+      <ul id="newsList" class="news-list"></ul>
+    </section>
+  </main>
+
+  <section id="historyCard" class="card history-card">
+    <button id="historyToggle" class="history-toggle" aria-expanded="false">
+      <span>최근 조회 <span id="historyCount" class="mono muted"></span></span>
+      <span id="historyChevron">▾</span>
+    </button>
+    <ul id="historyList" class="history-list"></ul>
+  </section>
+
+  <footer class="disclaimer">
+    <p>이 도구는 투자자문이 아니며 표시되는 정보는 참고용 데모 데이터입니다.<br />투자 판단과 그 책임은 본인에게 있습니다.</p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+     데모 데이터
+     실제 연동 시 이 객체 대신:
+       - 시가총액/기업개요 → naver-proxy Worker의 새 엔드포인트
+       - 비슷한 회사 → 기존 대시보드 SECTOR_REPRESENTATIVE_STOCKS 재사용
+       - 업종전망 → stock-opinion-api (Vercel, Claude Haiku)
+       - 매출/순이익 → naver-proxy의 /finance/annual
+       - 이동평균 → naver-proxy의 /price (60개씩 페이지네이션)
+       - 관련뉴스 → 종목명으로 구글뉴스 검색
+     로 교체하면 됩니다.
+  ============================================================ */
+  const DEMO_DATA = {
+    '005930': {
+      name: '삼성전자',
+      code: '005930',
+      marketCap: '약 450조원',
+      overview: '가전, 스마트폰, 반도체, 디스플레이, 전장부품까지 아우르는 종합 전자기업. 여러 사업부가 사이클을 달리하며 서로 실적을 보완하는 구조라, 개별 사업부 뉴스만 보고 전체를 판단하기보다 부문별로 나눠서 보는 게 안전함.',
+      similar: ['SK하이닉스', 'LG전자', 'DB하이텍', '삼성전기'],
+      outlook: '메모리 반도체는 AI 서버향 수요가 견조하지만 스마트폰·가전은 성장 둔화 국면. 파운드리 사업의 수주 확대 여부가 중기 밸류에이션의 핵심 변수로 꼽힘.',
+      financials: {
+        years: ['2022', '2023', '2024', '2025'],
+        revenue: [302, 259, 300, 318],
+        profit: [55, 6, 34, 41]
+      },
+      ma: {
+        months: ['3월', '4월', '5월', '6월', '7월'],
+        price: [71000, 73500, 76000, 79500, 81000],
+        ma5: [70200, 71800, 73900, 76600, 78900]
+      },
+      news: [
+        { title: 'AI 서버향 고대역폭 메모리 수요 확대, 하반기 실적 개선 기대', source: '데모뉴스 · 경제' },
+        { title: '파운드리 신규 수주 발표, 시장 반응은 엇갈려', source: '데모뉴스 · 산업' },
+        { title: '가전 사업부 실적 부진, 스마트폰은 소폭 회복', source: '데모뉴스 · 기업' }
+      ]
+    },
+    '010120': {
+      name: 'LS ELECTRIC',
+      code: '010120',
+      marketCap: '약 6.8조원',
+      overview: '전력기기, 자동화, 전선 사업을 주력으로 하는 전력·에너지 인프라 기업. 최근 미국 데이터센터 전력망 투자 확대의 수혜주로 부각되며 관심이 늘고 있음.',
+      similar: ['효성중공업', '일진전기', 'HD현대일렉트릭', '제룡전기'],
+      outlook: '미국 데이터센터·전력망 투자 확대 국면에서 수주 모멘텀은 긍정적이나, 최근 주가 상승폭이 커서 밸류에이션 부담이 동반되는 구간이라는 시각도 있음.',
+      financials: {
+        years: ['2022', '2023', '2024', '2025'],
+        revenue: [3.4, 3.9, 4.5, 5.1],
+        profit: [0.15, 0.28, 0.41, 0.52]
+      },
+      ma: {
+        months: ['3월', '4월', '5월', '6월', '7월'],
+        price: [220000, 235000, 258000, 271000, 285000],
+        ma5: [210000, 221000, 238000, 254000, 268000]
+      },
+      news: [
+        { title: '미국 전력망 인프라 투자 확대, 수혜 기대감 지속', source: '데모뉴스 · 산업' },
+        { title: '2분기 수주잔고 역대 최대치 경신', source: '데모뉴스 · 기업' },
+        { title: '밸류에이션 부담론 vs 실적 성장론, 증권가 시각 엇갈려', source: '데모뉴스 · 증권' }
+      ]
+    },
+    '035420': {
+      name: '네이버',
+      code: '035420',
+      marketCap: '약 30조원',
+      overview: '검색·커머스·핀테크·콘텐츠·클라우드를 아우르는 국내 대표 인터넷 플랫폼 기업. 광고와 커머스 중심의 본업 성장이 둔화되는 대신, AI 기반 신사업과 해외(일본 등) 사업 비중이 커지는 중.',
+      similar: ['카카오', '더존비즈온', '엔씨소프트', 'NHN'],
+      outlook: 'AI 검색·커머스 결합 서비스 확대가 신성장 동력으로 거론되지만, 광고 본업 성장률 둔화를 상쇄할 만큼의 속도인지는 아직 지켜봐야 하는 단계.',
+      financials: {
+        years: ['2022', '2023', '2024', '2025'],
+        revenue: [8.2, 9.1, 10.2, 11.0],
+        profit: [1.2, 1.4, 1.6, 1.7]
+      },
+      ma: {
+        months: ['3월', '4월', '5월', '6월', '7월'],
+        price: [178000, 182000, 190000, 195000, 201000],
+        ma5: [172000, 176000, 183000, 188000, 194000]
+      },
+      news: [
+        { title: 'AI 검색 결합 커머스 서비스 확대 발표', source: '데모뉴스 · IT' },
+        { title: '일본 법인 실적 개선, 해외 비중 확대', source: '데모뉴스 · 기업' },
+        { title: '광고 부문 성장률 둔화, 신사업 전환 속도가 관건', source: '데모뉴스 · 증권' }
+      ]
+    }
+  };
+
+  const HISTORY_KEY = 'moonhoesa_history_v1';
+  const MAX_HISTORY = 20;
+
+  // ---------- DOM refs ----------
+  const searchInput = document.getElementById('stockSearch');
+  const acList = document.getElementById('autocompleteList');
+  const emptyState = document.getElementById('emptyState');
+
+  const companyCard = document.getElementById('companyCard');
+  const outlookCard = document.getElementById('outlookCard');
+  const financialsCard = document.getElementById('financialsCard');
+  const maCard = document.getElementById('maCard');
+  const newsCard = document.getElementById('newsCard');
+
+  const historyCard = document.getElementById('historyCard');
+  const historyToggle = document.getElementById('historyToggle');
+  const historyList = document.getElementById('historyList');
+  const historyCount = document.getElementById('historyCount');
+
+  // ---------- 검색 / 자동완성 ----------
+  function searchCompanies(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return Object.values(DEMO_DATA).filter((c) =>
+      c.name.toLowerCase().includes(q) || c.code.includes(q)
+    );
+  }
+
+  function renderAutocomplete(results) {
+    acList.innerHTML = '';
+    if (results.length === 0) {
+      acList.hidden = true;
+      return;
+    }
+    results.forEach((c) => {
+      const li = document.createElement('li');
+      li.innerHTML =
+        '<span>' + escapeHtml(c.name) + '</span>' +
+        '<span class="ac-code mono">' + escapeHtml(c.code) + '</span>';
+      li.addEventListener('click', () => {
+        searchInput.value = c.name;
+        acList.hidden = true;
+        selectCompany(c.code);
+      });
+      acList.appendChild(li);
+    });
+    acList.hidden = false;
+  }
+
+  searchInput.addEventListener('input', (e) => {
+    renderAutocomplete(searchCompanies(e.target.value));
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const results = searchCompanies(searchInput.value);
+      if (results.length > 0) {
+        acList.hidden = true;
+        selectCompany(results[0].code);
+      }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrap')) acList.hidden = true;
+  });
+
+  // ---------- 종목 선택 → 전체 카드 렌더 ----------
+  function selectCompany(code) {
+    const c = DEMO_DATA[code];
+    if (!c) return;
+
+    emptyState.hidden = true;
+
+    document.getElementById('companyName').textContent = c.name;
+    document.getElementById('companyCode').textContent = c.code;
+    document.getElementById('marketCap').textContent = c.marketCap;
+    document.getElementById('companyOverview').textContent = c.overview;
+
+    const chipsEl = document.getElementById('similarChips');
+    chipsEl.innerHTML = '';
+    c.similar.forEach((name) => {
+      const span = document.createElement('span');
+      span.className = 'chip';
+      span.textContent = name;
+      chipsEl.appendChild(span);
+    });
+    companyCard.hidden = false;
+
+    document.getElementById('outlookText').textContent = c.outlook;
+    outlookCard.hidden = false;
+
+    document.getElementById('financialsChart').innerHTML =
+      renderBarChart(c.financials.years, c.financials.revenue, c.financials.profit);
+    financialsCard.hidden = false;
+
+    document.getElementById('maChart').innerHTML =
+      renderLineChart(c.ma.months, c.ma.price, c.ma.ma5);
+    maCard.hidden = false;
+
+    const newsEl = document.getElementById('newsList');
+    newsEl.innerHTML = '';
+    c.news.forEach((n) => {
+      const li = document.createElement('li');
+      li.innerHTML =
+        '<span>' + escapeHtml(n.title) + '</span>' +
+        '<span class="news-source">' + escapeHtml(n.source) + '</span>';
+      newsEl.appendChild(li);
+    });
+    newsCard.hidden = false;
+
+    addToHistory(c);
+  }
+
+  // ---------- SVG 차트 (외부 라이브러리 없이 직접 렌더) ----------
+  function renderBarChart(labels, seriesA, seriesB) {
+    const w = 500, h = 180, padL = 34, padB = 26, padT = 10, padR = 10;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
+    const maxVal = Math.max(...seriesA, ...seriesB, 1);
+    const groupW = chartW / labels.length;
+    const barW = groupW * 0.28;
+
+    let bars = '';
+    labels.forEach((label, i) => {
+      const x0 = padL + i * groupW + groupW * 0.16;
+      const aH = (seriesA[i] / maxVal) * chartH;
+      const bH = (seriesB[i] / maxVal) * chartH;
+      bars +=
+        '<rect x="' + x0 + '" y="' + (padT + chartH - aH) + '" width="' + barW + '" height="' + aH + '" fill="var(--fg-muted)" rx="2"></rect>' +
+        '<rect x="' + (x0 + barW + 4) + '" y="' + (padT + chartH - bH) + '" width="' + barW + '" height="' + bH + '" fill="var(--accent)" rx="2"></rect>' +
+        '<text x="' + (x0 + barW) + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+    });
+
+    return (
+      '<svg viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg">' +
+      '<line x1="' + padL + '" y1="' + (padT + chartH) + '" x2="' + (w - padR) + '" y2="' + (padT + chartH) + '" stroke="var(--border)" stroke-width="1"></line>' +
+      bars +
+      '</svg>'
+    );
+  }
+
+  function renderLineChart(labels, priceSeries, maSeries) {
+    const w = 500, h = 180, padL = 44, padB = 26, padT = 14, padR = 12;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
+    const allVals = priceSeries.concat(maSeries);
+    const maxVal = Math.max(...allVals);
+    const minVal = Math.min(...allVals);
+    const range = (maxVal - minVal) || 1;
+    const stepX = chartW / (labels.length - 1);
+
+    function toPoints(series) {
+      return series
+        .map((v, i) => {
+          const x = padL + i * stepX;
+          const y = padT + chartH - ((v - minVal) / range) * chartH;
+          return x.toFixed(1) + ',' + y.toFixed(1);
+        })
+        .join(' ');
+    }
+
+    let labelsSvg = '';
+    labels.forEach((label, i) => {
+      const x = padL + i * stepX;
+      labelsSvg += '<text x="' + x + '" y="' + (h - 6) + '" font-size="10" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
+    });
+
+    return (
+      '<svg viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg">' +
+      '<line x1="' + padL + '" y1="' + (padT + chartH) + '" x2="' + (w - padR) + '" y2="' + (padT + chartH) + '" stroke="var(--border)" stroke-width="1"></line>' +
+      '<polyline points="' + toPoints(priceSeries) + '" fill="none" stroke="var(--fg-muted)" stroke-width="2"></polyline>' +
+      '<polyline points="' + toPoints(maSeries) + '" fill="none" stroke="var(--accent)" stroke-width="2.4"></polyline>' +
+      labelsSvg +
+      '</svg>'
+    );
+  }
+
+  // ---------- 히스토리 (localStorage) ----------
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function saveHistory(list) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, MAX_HISTORY)));
+    } catch (err) {
+      // localStorage 사용 불가 시 조용히 무시 (시크릿 모드 등)
+    }
+  }
+
+  function addToHistory(c) {
+    let list = loadHistory().filter((item) => item.code !== c.code);
+    list.unshift({
+      code: c.code,
+      name: c.name,
+      snippet: c.overview.slice(0, 40) + '…',
+      ts: Date.now()
+    });
+    saveHistory(list);
+    renderHistory();
+  }
+
+  function formatRelativeTime(ts) {
+    const diffMin = Math.floor((Date.now() - ts) / 60000);
+    if (diffMin < 1) return '방금';
+    if (diffMin < 60) return diffMin + '분 전';
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return diffHour + '시간 전';
+    const diffDay = Math.floor(diffHour / 24);
+    return diffDay + '일 전';
+  }
+
+  function renderHistory() {
+    const list = loadHistory();
+    historyCount.textContent = '(' + list.length + ')';
+    historyList.innerHTML = '';
+
+    if (list.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'mono muted';
+      li.style.cursor = 'default';
+      li.textContent = '아직 히스토리가 없어요.';
+      historyList.appendChild(li);
+      return;
+    }
+
+    list.forEach((item) => {
+      const li = document.createElement('li');
+      li.innerHTML =
+        '<div>' +
+          '<span class="history-name">' + escapeHtml(item.name) + '</span>' +
+          '<span class="history-snippet">' + escapeHtml(item.snippet) + '</span>' +
+        '</div>' +
+        '<span class="history-time">' + formatRelativeTime(item.ts) + '</span>';
+      li.addEventListener('click', () => {
+        if (DEMO_DATA[item.code]) {
+          searchInput.value = item.name;
+          selectCompany(item.code);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+      historyList.appendChild(li);
+    });
+  }
+
+  historyToggle.addEventListener('click', () => {
+    const expanded = historyCard.classList.toggle('expanded');
+    historyToggle.setAttribute('aria-expanded', String(expanded));
+  });
+
+  // ---------- 유틸 ----------
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // ---------- 초기화 ----------
+  renderHistory();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {
+        // 서비스워커 등록 실패는 조용히 무시 (오프라인 캐싱만 못 쓸 뿐 앱은 정상 동작)
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>
