@@ -512,9 +512,7 @@
         <span><i class="dot revenue"></i>매출</span>
         <span><i class="dot opprofit"></i>영업이익</span>
         <span><i class="dot profit"></i>순이익</span>
-        <span style="opacity:0.6;">▨ 반투명 = 뉴스 기반 추정치</span>
       </div>
-      <p id="financialsEstimateWarning" class="mono" style="margin:8px 0 0; font-size:0.76rem; color:var(--up);" hidden>⚠️ 추정치는 뉴스기반으로 신뢰도가 낮음</p>
       <p id="financialsQuarter" class="mono muted" style="margin:10px 0 0; font-size:0.78rem;" hidden></p>
     </section>
 
@@ -878,25 +876,9 @@
       const hasNews = Array.isArray(data.headlines) && data.headlines.length > 0;
       if (!hasSummary && !hasNews) return null;
 
-      let estimates = [];
-      if (Array.isArray(data.estimates)) {
-        estimates = data.estimates
-          .map((e) => {
-            if (!e || typeof e !== 'object') return null;
-            const year = typeof e.year === 'number' ? e.year : null;
-            const revenue = typeof e.revenue_eok === 'number' ? e.revenue_eok : null;
-            const operatingProfit = typeof e.operating_profit_eok === 'number' ? e.operating_profit_eok : null;
-            const profit = typeof e.profit_eok === 'number' ? e.profit_eok : null;
-            if (year === null || (revenue === null && operatingProfit === null && profit === null)) return null;
-            return { year, revenue, operatingProfit, profit };
-          })
-          .filter(Boolean);
-      }
-
       return {
         summary: hasSummary ? data.summary.trim() : null,
-        news: hasNews ? data.headlines : null,
-        estimates
+        news: hasNews ? data.headlines : null
       };
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 실시간 업종전망/뉴스 조회 실패, 데모 데이터로 표시합니다:', err);
@@ -1119,10 +1101,8 @@
     const financialsSourceTag = document.getElementById('financialsSourceTag');
     financialsSourceTag.textContent = '불러오는 중…';
     financialsSourceTag.className = 'data-source-tag loading';
-    document.getElementById('financialsEstimateWarning').hidden = true;
 
     let financialsDartData = null;
-    let financialsEstimates = [];
 
     function renderCombinedFinancials() {
       if (!financialsDartData) return; // DART 데이터가 없으면 데모 차트를 그대로 둠
@@ -1131,8 +1111,6 @@
       const revenueArr = [...financialsDartData.revenue];
       const opArr = [...financialsDartData.operatingProfit];
       const profitArr = [...financialsDartData.profit];
-      const isEstimateFlags = categories.map(() => false);
-      const unavailableFlags = categories.map(() => false);
 
       // 2026년 1분기처럼 이미 공시된 최신 분기 실적이 있으면 뒤에 실제값으로 추가
       if (
@@ -1143,38 +1121,10 @@
         revenueArr.push(financialsDartData.q1Revenue ?? 0);
         opArr.push(financialsDartData.q1OperatingProfit ?? 0);
         profitArr.push(financialsDartData.q1Profit ?? 0);
-        isEstimateFlags.push(false);
-        unavailableFlags.push(false);
       }
 
-      // 뉴스에 명시된 연도별 추정치를 붙임. 올해(2026)/내년(2027) 두 자리는
-      // 뉴스에서 못 찾았어도 "조회안됨"으로라도 항상 보여줌.
-      const thisYear = new Date().getFullYear();
-      const estimateYears = [thisYear, thisYear + 1];
-      let anyEstimateFound = false;
-
-      estimateYears.forEach((yr) => {
-        const est = financialsEstimates.find((e) => e.year === yr);
-        categories.push(yr + '(뉴스추정)');
-        isEstimateFlags.push(true);
-        if (est && (est.revenue !== null || est.operatingProfit !== null || est.profit !== null)) {
-          revenueArr.push(est.revenue ?? 0);
-          opArr.push(est.operatingProfit ?? 0);
-          profitArr.push(est.profit ?? 0);
-          unavailableFlags.push(false);
-          anyEstimateFound = true;
-        } else {
-          revenueArr.push(0);
-          opArr.push(0);
-          profitArr.push(0);
-          unavailableFlags.push(true);
-        }
-      });
-
       document.getElementById('financialsChart').innerHTML =
-        renderBarChart(categories, revenueArr, opArr, profitArr, isEstimateFlags, unavailableFlags);
-
-      document.getElementById('financialsEstimateWarning').hidden = !anyEstimateFound;
+        renderBarChart(categories, revenueArr, opArr, profitArr);
     }
 
     fetchRealFinancials(code).then((real) => {
@@ -1239,11 +1189,6 @@
         newsSourceTag.textContent = '데모';
         newsSourceTag.className = 'data-source-tag demo';
       }
-
-      // 업종전망 조회가 매출/순이익보다 늦게 끝나는 경우에도, DART 데이터가
-      // 이미 그려져 있으면 그 위에 추정치 막대만 추가로 얹어줌
-      financialsEstimates = (real && Array.isArray(real.estimates)) ? real.estimates : [];
-      renderCombinedFinancials();
     });
 
     const maSourceTag = document.getElementById('maSourceTag');
@@ -1282,7 +1227,7 @@
     return Math.round(value).toLocaleString('ko-KR') + '억';
   }
 
-  function renderBarChart(labels, revenueArr, opArr, profitArr, isEstimateFlags, unavailableFlags) {
+  function renderBarChart(labels, revenueArr, opArr, profitArr) {
     const w = 620, h = 270, padL = 30, padB = 26, padT = 74, padR = 10;
     const chartW = w - padL - padR;
     const chartH = h - padT - padB;
@@ -1294,18 +1239,11 @@
 
     let bars = '';
     labels.forEach((label, i) => {
-      const isEstimate = Array.isArray(isEstimateFlags) && isEstimateFlags[i];
-      const isUnavailable = Array.isArray(unavailableFlags) && unavailableFlags[i];
       const groupX0 = padL + i * groupW + groupPad;
       const groupCenterX = groupX0 + (barW * 3 + gap * 2) / 2;
 
       // 카테고리 이름은 항상 표시
-      bars += '<text x="' + (groupX0 + (barW * 3 + gap * 2) / 2) + '" y="' + (h - 6) + '" font-size="11.5" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
-
-      if (isUnavailable) {
-        bars += '<text x="' + groupCenterX + '" y="' + (padT + chartH / 2) + '" font-size="11" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">조회안됨</text>';
-        return;
-      }
+      bars += '<text x="' + groupCenterX + '" y="' + (h - 6) + '" font-size="11.5" fill="var(--fg-faint)" font-family="var(--mono)" text-anchor="middle">' + escapeHtml(label) + '</text>';
 
       const revH = (revenueArr[i] / maxVal) * chartH;
       const opH = (opArr[i] / maxVal) * chartH;
@@ -1314,22 +1252,18 @@
       const opTop = padT + chartH - opH;
       const profitTop = padT + chartH - profitH;
 
-      const opacity = isEstimate ? '0.4' : '1';
-      const textOpacity = isEstimate ? '0.7' : '1';
-      const dash = isEstimate ? ' stroke-width="1" stroke-dasharray="3,2"' : '';
-
       // 막대 3개: 매출(회색) / 영업이익(파랑) / 순이익(앰버)
       bars +=
-        '<rect x="' + groupX0 + '" y="' + revTop + '" width="' + barW + '" height="' + revH + '" fill="var(--fg-muted)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--fg-muted)"' + dash : '') + '></rect>' +
-        '<rect x="' + (groupX0 + barW + gap) + '" y="' + opTop + '" width="' + barW + '" height="' + opH + '" fill="var(--down)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--down)"' + dash : '') + '></rect>' +
-        '<rect x="' + (groupX0 + (barW + gap) * 2) + '" y="' + profitTop + '" width="' + barW + '" height="' + profitH + '" fill="var(--accent)" fill-opacity="' + opacity + '" rx="2"' + (isEstimate ? ' stroke="var(--accent)"' + dash : '') + '></rect>';
+        '<rect x="' + groupX0 + '" y="' + revTop + '" width="' + barW + '" height="' + revH + '" fill="var(--fg-muted)" rx="2"></rect>' +
+        '<rect x="' + (groupX0 + barW + gap) + '" y="' + opTop + '" width="' + barW + '" height="' + opH + '" fill="var(--down)" rx="2"></rect>' +
+        '<rect x="' + (groupX0 + (barW + gap) * 2) + '" y="' + profitTop + '" width="' + barW + '" height="' + profitH + '" fill="var(--accent)" rx="2"></rect>';
 
       // 막대 그룹 위쪽에 색상 동그라미 + 금액만 표시 (항목명은 아래 범례로 대체)
       const lineY1 = 20, lineY2 = 38, lineY3 = 56;
       bars +=
-        '<text x="' + groupCenterX + '" y="' + lineY1 + '" font-size="13.5" font-weight="600" fill="var(--fg-muted)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(revenueArr[i]) + '</text>' +
-        '<text x="' + groupCenterX + '" y="' + lineY2 + '" font-size="13.5" font-weight="600" fill="var(--down)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(opArr[i]) + '</text>' +
-        '<text x="' + groupCenterX + '" y="' + lineY3 + '" font-size="13.5" font-weight="600" fill="var(--accent)" fill-opacity="' + textOpacity + '" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(profitArr[i]) + '</text>';
+        '<text x="' + groupCenterX + '" y="' + lineY1 + '" font-size="13.5" font-weight="600" fill="var(--fg-muted)" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(revenueArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY2 + '" font-size="13.5" font-weight="600" fill="var(--down)" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(opArr[i]) + '</text>' +
+        '<text x="' + groupCenterX + '" y="' + lineY3 + '" font-size="13.5" font-weight="600" fill="var(--accent)" font-family="var(--mono)" text-anchor="middle">● ' + formatEokWonLabel(profitArr[i]) + '</text>';
     });
 
     return (
