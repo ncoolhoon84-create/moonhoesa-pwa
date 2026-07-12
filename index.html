@@ -505,6 +505,7 @@
           <h2 id="companyName"></h2>
           <span id="companyCode" class="mono muted"></span>
           <span id="dataSourceTag" class="data-source-tag demo">🧊데모</span>
+          <div id="currentPriceRow" class="mono" style="margin-top:6px; font-size:1rem; font-weight:600;"></div>
         </div>
         <div class="marketcap-pill">
           <span class="label">시가총액</span>
@@ -583,6 +584,9 @@
       name: '삼성전자',
       code: '005930',
       marketCap: '약 450조원',
+      price: '81,000',
+      priceChange: '+500',
+      priceChangePct: '+0.62',
       overview: '가전, 스마트폰, 반도체, 디스플레이, 전장부품까지 아우르는 종합 전자기업. 여러 사업부가 사이클을 달리하며 서로 실적을 보완하는 구조라, 개별 사업부 뉴스만 보고 전체를 판단하기보다 부문별로 나눠서 보는 게 안전함.',
       similar: ['SK하이닉스', 'LG전자', 'DB하이텍', '삼성전기'],
       outlook: '메모리 반도체는 AI 서버향 수요가 견조하지만 스마트폰·가전은 성장 둔화 국면. 파운드리 사업의 수주 확대 여부가 중기 밸류에이션의 핵심 변수로 꼽힘.',
@@ -607,6 +611,9 @@
       name: 'LS ELECTRIC',
       code: '010120',
       marketCap: '약 6.8조원',
+      price: '285,000',
+      priceChange: '+5,000',
+      priceChangePct: '+1.79',
       overview: '전력기기, 자동화, 전선 사업을 주력으로 하는 전력·에너지 인프라 기업. 최근 미국 데이터센터 전력망 투자 확대의 수혜주로 부각되며 관심이 늘고 있음.',
       similar: ['효성중공업', '일진전기', 'HD현대일렉트릭', '제룡전기'],
       outlook: '미국 데이터센터·전력망 투자 확대 국면에서 수주 모멘텀은 긍정적이나, 최근 주가 상승폭이 커서 밸류에이션 부담이 동반되는 구간이라는 시각도 있음.',
@@ -631,6 +638,9 @@
       name: '네이버',
       code: '035420',
       marketCap: '약 30조원',
+      price: '201,000',
+      priceChange: '-1,000',
+      priceChangePct: '-0.49',
       overview: '검색·커머스·핀테크·콘텐츠·클라우드를 아우르는 국내 대표 인터넷 플랫폼 기업. 광고와 커머스 중심의 본업 성장이 둔화되는 대신, AI 기반 신사업과 해외(일본 등) 사업 비중이 커지는 중.',
       similar: ['카카오', '더존비즈온', '엔씨소프트', 'NHN'],
       outlook: 'AI 검색·커머스 결합 서비스 확대가 신성장 동력으로 거론되지만, 광고 본업 성장률 둔화를 상쇄할 만큼의 속도인지는 아직 지켜봐야 하는 단계.',
@@ -681,16 +691,49 @@
       .join(' ');
 
     let marketCap = '';
+    let price = null;
+    let priceChange = null;
+    let priceChangePct = null;
+
     doc.querySelectorAll('table tr').forEach((tr) => {
       const th = tr.querySelector('th');
-      if (th && th.textContent.trim() === '시가총액') {
+      if (!th) return;
+      const label = th.textContent.trim();
+
+      if (label === '시가총액') {
         const td = tr.querySelector('td');
         if (td) marketCap = td.textContent.replace(/\s+/g, ' ').trim();
       }
+
+      if (label.startsWith('주가/전일대비')) {
+        const td = tr.querySelector('td');
+        if (td) {
+          const text = td.textContent.replace(/\s+/g, ' ').trim();
+          const m = text.match(/^([\d,]+)원\s*\/\s*([+-][\d,]+)원\s*\/\s*([+-][\d.]+)%/);
+          if (m) {
+            price = m[1];
+            priceChange = m[2];
+            priceChangePct = m[3];
+          }
+        }
+      }
     });
 
-    if (!overview && !marketCap) return null; // 아무것도 못 뽑았으면 실패로 간주
-    return { overview, marketCap };
+    if (!overview && !marketCap && !price) return null; // 아무것도 못 뽑았으면 실패로 간주
+    return { overview, marketCap, price, priceChange, priceChangePct };
+  }
+
+  // 현재가 줄을 색깔 있는 화살표와 함께 HTML로 만듦 (상승=빨강/하락=파랑, 한국 증시 관례)
+  function renderPriceRow(price, change, changePct) {
+    if (!price) return '';
+    const changeNum = parseFloat(String(change).replace(/,/g, ''));
+    let arrow = '－', color = 'var(--fg-muted)';
+    if (changeNum > 0) { arrow = '▲'; color = 'var(--up)'; }
+    else if (changeNum < 0) { arrow = '▼'; color = 'var(--down)'; }
+    return (
+      escapeHtml(price) + '원 ' +
+      '<span style="color:' + color + ';">' + arrow + ' ' + escapeHtml(change) + '원 (' + escapeHtml(changePct) + '%)</span>'
+    );
   }
 
   // fnguide는 시가총액을 "16,661,894억원"처럼 억원 단위 그대로 주는데,
@@ -1077,6 +1120,9 @@
       name: name || code,
       code,
       marketCap: '조회 중…',
+      price: null,
+      priceChange: null,
+      priceChangePct: null,
       overview: '실시간 데이터를 불러오는 중이에요…',
       similar: [],
       outlook: '조회 중…',
@@ -1099,6 +1145,7 @@
     document.getElementById('companyCode').textContent = c.code;
     document.getElementById('marketCap').textContent = c.marketCap;
     document.getElementById('companyOverview').textContent = c.overview;
+    document.getElementById('currentPriceRow').innerHTML = renderPriceRow(c.price, c.priceChange, c.priceChangePct);
     sourceTag.textContent = '🔍찾는 중…';
     sourceTag.className = 'data-source-tag loading';
 
@@ -1146,9 +1193,13 @@
 
     fetchRealOverview(code).then((real) => {
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
-      if (real && (real.overview || real.marketCap)) {
+      if (real && (real.overview || real.marketCap || real.price)) {
         if (real.overview) document.getElementById('companyOverview').textContent = real.overview;
         if (real.marketCap) document.getElementById('marketCap').textContent = formatMarketCap(real.marketCap);
+        if (real.price) {
+          document.getElementById('currentPriceRow').innerHTML =
+            renderPriceRow(real.price, real.priceChange, real.priceChangePct);
+        }
         sourceTag.textContent = '🔥실시간';
         sourceTag.className = 'data-source-tag live';
       } else {
