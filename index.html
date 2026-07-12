@@ -415,6 +415,22 @@
     margin-top: 3px;
   }
 
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.86rem;
+  }
+
+  .score-row:first-child { border-top: none; }
+
+  .score-row .score-label { color: var(--fg); }
+  .score-row .score-note { color: var(--fg-muted); font-size: 0.78rem; }
+  .score-row .score-points { font-family: var(--mono); font-weight: 600; color: var(--accent); white-space: nowrap; }
+
   /* ---------- History ---------- */
   .history-card { margin: 0 20px 14px; }
 
@@ -574,6 +590,14 @@
       </div>
     </section>
 
+    <section id="scoreCard" class="card" hidden>
+      <h3 class="section-title">저평가 우량주 스코어 <span id="scoreSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
+      <div id="scoreTotal" style="font-size:2.2rem; font-weight:700; font-family:var(--mono); margin-bottom:4px;"></div>
+      <div id="scoreAction" class="data-source-tag" style="font-size:0.85rem; padding:5px 12px; margin-bottom:14px; display:inline-block;"></div>
+      <ul id="scoreBreakdown" style="list-style:none; margin:0; padding:0;"></ul>
+      <p class="mono" style="margin:12px 0 0; font-size:0.72rem; color:var(--fg-faint);">DART 공시 데이터(10개년 순이익·배당) + FnGuide(PER·PBR) 기준 자동 계산. 참고용이며 투자 조언이 아닙니다.</p>
+    </section>
+
     <section id="newsCard" class="card" hidden>
       <h3 class="section-title">관련 뉴스 <span id="newsSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
       <ul id="newsList" class="news-list"></ul>
@@ -727,6 +751,20 @@
     let price = null;
     let priceChange = null;
     let priceChangePct = null;
+    let per = null;
+    let pbr = null;
+    let industryPer = null;
+
+    doc.querySelectorAll('dt').forEach((dt) => {
+      const labelNode = dt.childNodes[0];
+      const label = (labelNode && labelNode.nodeType === 3) ? labelNode.textContent.trim() : '';
+      const bEl = dt.querySelector('b.num');
+      const value = bEl ? bEl.textContent.trim() : '';
+      if (!value) return;
+      if (label === 'PER') per = value;
+      else if (label === '업종PER') industryPer = value;
+      else if (label === 'PBR') pbr = value;
+    });
 
     doc.querySelectorAll('table tr').forEach((tr) => {
       const th = tr.querySelector('th');
@@ -753,7 +791,7 @@
     });
 
     if (!overview && !marketCap && !price) return null; // 아무것도 못 뽑았으면 실패로 간주
-    return { overview, marketCap, price, priceChange, priceChangePct };
+    return { overview, marketCap, price, priceChange, priceChangePct, per, pbr, industryPer };
   }
 
   // 현재가 줄을 색깔 있는 화살표와 함께 HTML로 만듦 (상승=빨강/하락=파랑, 한국 증시 관례)
@@ -1042,6 +1080,131 @@
     }
   }
 
+  /* ============================================================
+     저평가 우량주 스코어 — DART 10개년 순이익/배당 + 자사주 매입·소각
+     + FnGuide의 PER/PBR/업종PER(기업개요 조회 시 이미 받아온 값)을 합쳐서
+     100점 만점 스코어를 계산함. 채점 기준을 나중에 조정하기 쉽게,
+     원자재 데이터는 Worker에서 가져오고 최종 점수는 여기(클라이언트)서 계산.
+  ============================================================ */
+  async function fetchRealScoreRaw(code) {
+    const map = await loadCorpCodeMap();
+    const entry = map[code];
+    if (!entry || !entry.corp_code) return null;
+
+    try {
+      const url = PROXY_BASE_URL + '/?mode=score&corp_code=' + encodeURIComponent(entry.corp_code);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 스코어 원자재 조회 실패:', err);
+      return null;
+    }
+  }
+
+  // 배열 안의 유효한(null 아닌) 값들끼리 연속 구간 증감을 세는 헬퍼
+  function countTrend(series) {
+    const valid = series.filter((v) => v !== null && v !== undefined && !Number.isNaN(v));
+    let increases = 0, decreases = 0;
+    for (let i = 1; i < valid.length; i++) {
+      if (valid[i] > valid[i - 1]) increases++;
+      else if (valid[i] < valid[i - 1]) decreases++;
+    }
+    return { increases, decreases, transitions: valid.length - 1, validCount: valid.length };
+  }
+
+  function computeScore(scoreRaw, per, pbr, industryPer) {
+    const breakdown = [];
+    let total = 0;
+
+    // ① 순이익 10년 추이 (15점)
+    const netIncomeTrend = countTrend(scoreRaw.netIncome);
+    let netIncomeScore = 5, netIncomeNote = '데이터 부족';
+    if (netIncomeTrend.transitions > 0) {
+      const ratio = netIncomeTrend.increases / netIncomeTrend.transitions;
+      if (ratio >= 0.7) { netIncomeScore = 15; netIncomeNote = '꾸준히 우상향'; }
+      else if (ratio >= 0.4) { netIncomeScore = 10; netIncomeNote = '정체·횡보'; }
+      else { netIncomeScore = 5; netIncomeNote = '감소 추세'; }
+    }
+    breakdown.push({ label: '순이익 10년 추이', score: netIncomeScore, max: 15, note: netIncomeNote });
+    total += netIncomeScore;
+
+    // ② 이익 리스크 방어력 (15점) — 변동계수(표준편차/평균)
+    const validNI = scoreRaw.netIncome.filter((v) => v !== null && v !== undefined);
+    let stabilityScore = 5, stabilityNote = '데이터 부족';
+    if (validNI.length >= 3) {
+      const mean = validNI.reduce((s, v) => s + v, 0) / validNI.length;
+      const variance = validNI.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / validNI.length;
+      const cv = mean !== 0 ? Math.sqrt(variance) / Math.abs(mean) : Infinity;
+      if (cv < 0.3) { stabilityScore = 15; stabilityNote = '안정적(변동성 낮음)'; }
+      else if (cv < 0.6) { stabilityScore = 10; stabilityNote = '보통'; }
+      else { stabilityScore = 5; stabilityNote = '변동성 큼'; }
+    }
+    breakdown.push({ label: '이익 리스크 방어력', score: stabilityScore, max: 15, note: stabilityNote });
+    total += stabilityScore;
+
+    // ③ 배당금 10년 성장 (15점)
+    const divTrend = countTrend(scoreRaw.dividendPerShare);
+    let divScore = 0, divNote = '데이터 없음';
+    if (divTrend.transitions > 0) {
+      if (divTrend.decreases === 0) { divScore = 15; divNote = '매년 증가 또는 유지'; }
+      else if (divTrend.decreases <= 2) { divScore = 10; divNote = '배당 동결 위주'; }
+      else { divScore = 0; divNote = '배당 삭감 이력 있음'; }
+    }
+    breakdown.push({ label: '배당금 10년 성장', score: divScore, max: 15, note: divNote });
+    total += divScore;
+
+    // ④ 배당수익률 (15점)
+    let yieldScore = 5, yieldNote = '배당 없음/낮음';
+    const yieldPct = scoreRaw.latestYieldPct;
+    if (yieldPct !== null && yieldPct !== undefined) {
+      if (yieldPct >= 3) { yieldScore = 15; yieldNote = yieldPct.toFixed(2) + '% (높음)'; }
+      else if (yieldPct >= 1) { yieldScore = 10; yieldNote = yieldPct.toFixed(2) + '% (보통)'; }
+      else { yieldScore = 5; yieldNote = yieldPct.toFixed(2) + '% (낮음)'; }
+    }
+    breakdown.push({ label: '배당수익률', score: yieldScore, max: 15, note: yieldNote });
+    total += yieldScore;
+
+    // ⑤ 자사주 매입/소각 (10점)
+    let buybackScore = 5, buybackNote = '활동 없음/확인 안됨';
+    if (scoreRaw.buybackStatus === 'retirement') { buybackScore = 10; buybackNote = '최근 소각 이력 있음'; }
+    else if (scoreRaw.buybackStatus === 'buyback_only') { buybackScore = 7; buybackNote = '매입만 있음(소각 없음)'; }
+    breakdown.push({ label: '자사주 매입·소각', score: buybackScore, max: 10, note: buybackNote });
+    total += buybackScore;
+
+    // ⑥ PER (15점) — 업종PER 대비
+    const perNum = per ? parseFloat(per) : null;
+    const industryPerNum = industryPer ? parseFloat(industryPer) : null;
+    let perScore = 10, perNote = '비교 불가';
+    if (perNum !== null && industryPerNum) {
+      const rel = perNum / industryPerNum;
+      if (rel < 0.8) { perScore = 15; perNote = 'PER ' + perNum + ' (업종 대비 저평가)'; }
+      else if (rel <= 1.2) { perScore = 10; perNote = 'PER ' + perNum + ' (업종과 비슷)'; }
+      else { perScore = 5; perNote = 'PER ' + perNum + ' (업종 대비 고평가)'; }
+    }
+    breakdown.push({ label: 'PER (업종 대비)', score: perScore, max: 15, note: perNote });
+    total += perScore;
+
+    // ⑦ PBR (15점)
+    const pbrNum = pbr ? parseFloat(pbr) : null;
+    let pbrScore = 10, pbrNote = '데이터 없음';
+    if (pbrNum !== null) {
+      if (pbrNum < 1) { pbrScore = 15; pbrNote = 'PBR ' + pbrNum + ' (1 미만, 저평가)'; }
+      else if (pbrNum <= 2) { pbrScore = 10; pbrNote = 'PBR ' + pbrNum; }
+      else { pbrScore = 5; pbrNote = 'PBR ' + pbrNum + ' (고평가)'; }
+    }
+    breakdown.push({ label: 'PBR', score: pbrScore, max: 15, note: pbrNote });
+    total += pbrScore;
+
+    let action = '';
+    if (total >= 80) action = '적극 매수 고려';
+    else if (total >= 70) action = '매수 고려';
+    else if (total >= 50) action = '투자 유지(보유)';
+    else action = '매도 고려';
+
+    return { total, breakdown, action };
+  }
+
   // ---------- DOM refs ----------
   const searchInput = document.getElementById('stockSearch');
   const acList = document.getElementById('autocompleteList');
@@ -1249,6 +1412,7 @@
     similarSourceTag.className = 'data-source-tag loading';
 
     let overviewForAI = c.overview;
+    let scorePerPbr = { per: null, pbr: null, industryPer: null };
 
     const overviewFetchPromise = fetchRealOverview(code).then((real) => {
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
@@ -1262,6 +1426,8 @@
           document.getElementById('currentPriceRow').innerHTML =
             renderPriceRow(real.price, real.priceChange, real.priceChangePct);
         }
+        scorePerPbr = { per: real.per || null, pbr: real.pbr || null, industryPer: real.industryPer || null };
+        if (typeof renderScoreCard === 'function') renderScoreCard();
         sourceTag.textContent = '🔥실시간';
         sourceTag.className = 'data-source-tag live';
       } else {
@@ -1406,6 +1572,52 @@
         maSourceTag.textContent = '🧊데모';
         maSourceTag.className = 'data-source-tag demo';
       }
+    });
+
+    // ---------- 저평가 우량주 스코어 ----------
+    const scoreSourceTag = document.getElementById('scoreSourceTag');
+    scoreSourceTag.textContent = '🔍찾는 중…';
+    scoreSourceTag.className = 'data-source-tag loading';
+
+    let scoreRawData = null;
+
+    function renderScoreCard() {
+      if (!scoreRawData) return;
+      const result = computeScore(scoreRawData, scorePerPbr.per, scorePerPbr.pbr, scorePerPbr.industryPer);
+
+      document.getElementById('scoreCard').hidden = false;
+      document.getElementById('scoreTotal').textContent = result.total + ' / 100';
+
+      const actionEl = document.getElementById('scoreAction');
+      actionEl.textContent = result.action;
+      if (result.total >= 70) actionEl.className = 'data-source-tag live';
+      else if (result.total >= 50) actionEl.className = 'data-source-tag loading';
+      else actionEl.className = 'data-source-tag demo';
+
+      const listEl = document.getElementById('scoreBreakdown');
+      listEl.innerHTML = '';
+      result.breakdown.forEach((item) => {
+        const li = document.createElement('li');
+        li.className = 'score-row';
+        li.innerHTML =
+          '<span class="score-label">' + escapeHtml(item.label) + '<span class="score-note"> · ' + escapeHtml(item.note) + '</span></span>' +
+          '<span class="score-points">' + item.score + '/' + item.max + '</span>';
+        listEl.appendChild(li);
+      });
+
+      scoreSourceTag.textContent = '🔥실시간';
+      scoreSourceTag.className = 'data-source-tag live';
+    }
+
+    fetchRealScoreRaw(code).then((raw) => {
+      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+      if (!raw) {
+        scoreSourceTag.textContent = '🧊데모(실패)';
+        scoreSourceTag.className = 'data-source-tag demo';
+        return;
+      }
+      scoreRawData = raw;
+      renderScoreCard();
     });
   }
 
