@@ -431,6 +431,27 @@
   .score-row .score-note { color: var(--fg-muted); font-size: 0.78rem; }
   .score-row .score-points { font-family: var(--mono); font-weight: 600; color: var(--accent); white-space: nowrap; }
 
+  .score-row.weak .score-points { color: var(--up); }
+  .score-row.weak .score-label::before { content: "⚠️ "; }
+
+  .score-notice {
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(255,82,82,0.1);
+    border: 1px solid rgba(255,82,82,0.3);
+    color: var(--up);
+    font-size: 0.78rem;
+    font-family: var(--mono);
+  }
+
+  .score-price-position {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--fg-muted);
+  }
+
   /* ---------- History ---------- */
   .history-card { margin: 0 20px 14px; }
 
@@ -591,10 +612,12 @@
     </section>
 
     <section id="scoreCard" class="card" hidden>
-      <h3 class="section-title">저평가 우량주 스코어 <span id="scoreSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
+      <h3 class="section-title">우량주 건강검진 <span id="scoreSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
       <div id="scoreTotal" style="font-size:2.2rem; font-weight:700; font-family:var(--mono); margin-bottom:4px;"></div>
       <div id="scoreAction" class="data-source-tag" style="font-size:0.85rem; padding:5px 12px; margin-bottom:14px; display:inline-block;"></div>
-      <ul id="scoreBreakdown" style="list-style:none; margin:0; padding:0;"></ul>
+      <div id="scoreCyclicalNotice" class="score-notice" hidden></div>
+      <div id="scorePricePosition" class="score-price-position" hidden></div>
+      <ul id="scoreBreakdown" style="list-style:none; margin:14px 0 0; padding:0;"></ul>
       <div class="mono muted" style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border); font-size:0.7rem; line-height:1.8;">
         <strong style="color:var(--fg-muted);">평가 기준</strong><br>
         · 순이익 10년 추이 — 우상향 15 · 횡보 10 · 감소 5<br>
@@ -880,6 +903,23 @@
     return null; // 이 딕셔너리에 없는 종목 (데모 3종목 중 네이버 등)
   }
 
+  // 경기순환(사이클) 업종 여부 — 우량주 건강검진의 "이익 리스크 방어력" 항목을
+  // 보수적으로 해석하라는 안내에 사용. 새 API 없이 기존 섹터 딕셔너리 재사용.
+  const CYCLICAL_SECTOR_KEYWORDS = ['반도체', '2차전지', '조선', '자동차', '화학', '철강', '건설'];
+
+  function findSectorKeyForCode(code) {
+    for (const key of Object.keys(SECTOR_REPRESENTATIVE_STOCKS)) {
+      if (SECTOR_REPRESENTATIVE_STOCKS[key].includes(code)) return key;
+    }
+    return null;
+  }
+
+  function isCyclicalSector(code) {
+    const key = findSectorKeyForCode(code);
+    if (!key) return false;
+    return CYCLICAL_SECTOR_KEYWORDS.some((kw) => key.includes(kw));
+  }
+
   // fnguide 기업현황 페이지에서 회사 이름만 가볍게 추출
   function parseCompanyName(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -1091,7 +1131,7 @@
   }
 
   /* ============================================================
-     저평가 우량주 스코어 — DART 10개년 순이익/배당 + 자사주 매입·소각
+     우량주 건강검진 — DART 10개년 순이익/배당 + 자사주 매입·소각
      + FnGuide의 PER/PBR/업종PER(기업개요 조회 시 이미 받아온 값)을 합쳐서
      100점 만점 스코어를 계산함. 채점 기준을 나중에 조정하기 쉽게,
      원자재 데이터는 Worker에서 가져오고 최종 점수는 여기(클라이언트)서 계산.
@@ -1435,6 +1475,8 @@
         if (real.price) {
           document.getElementById('currentPriceRow').innerHTML =
             renderPriceRow(real.price, real.priceChange, real.priceChangePct);
+          const parsedPrice = parseFloat(String(real.price).replace(/,/g, ''));
+          if (!Number.isNaN(parsedPrice)) currentPriceValue = parsedPrice;
         }
         scorePerPbr = { per: real.per || null, pbr: real.pbr || null, industryPer: real.industryPer || null };
         if (typeof renderScoreCard === 'function') renderScoreCard();
@@ -1578,18 +1620,22 @@
           renderLineChart(real.months, real.price, real.ma5);
         maSourceTag.textContent = '🔥실시간';
         maSourceTag.className = 'data-source-tag live';
+        maForScore = real;
+        if (typeof renderScoreCard === 'function') renderScoreCard();
       } else {
         maSourceTag.textContent = '🧊데모';
         maSourceTag.className = 'data-source-tag demo';
       }
     });
 
-    // ---------- 저평가 우량주 스코어 ----------
+    // ---------- 우량주 건강검진 ----------
     const scoreSourceTag = document.getElementById('scoreSourceTag');
     scoreSourceTag.textContent = '🔍찾는 중…';
     scoreSourceTag.className = 'data-source-tag loading';
 
     let scoreRawData = null;
+    let currentPriceValue = null;
+    let maForScore = null;
 
     function renderScoreCard() {
       if (!scoreRawData) return;
@@ -1604,11 +1650,40 @@
       else if (result.total >= 50) actionEl.className = 'data-source-tag loading';
       else actionEl.className = 'data-source-tag demo';
 
+      // 개선안 ②: 경기순환 업종이면 안내 문구
+      const cyclicalEl = document.getElementById('scoreCyclicalNotice');
+      if (isCyclicalSector(code)) {
+        cyclicalEl.textContent = '⚠️ 경기순환 업종 — "이익 리스크 방어력" 점수를 더 보수적으로 해석하세요. 사이클 업종은 순이익이 몇 년 우상향해도 다운사이클이 갑자기 올 수 있어요.';
+        cyclicalEl.hidden = false;
+      } else {
+        cyclicalEl.hidden = true;
+      }
+
+      // 개선안 ③: 현재가가 5개월 이동평균 대비 어디 있는지
+      const pricePosEl = document.getElementById('scorePricePosition');
+      if (currentPriceValue !== null && maForScore && maForScore.ma5 && maForScore.ma5.length > 0) {
+        const lastMA = maForScore.ma5[maForScore.ma5.length - 1];
+        if (lastMA) {
+          const diffPct = ((currentPriceValue - lastMA) / lastMA) * 100;
+          const sign = diffPct >= 0 ? '+' : '';
+          const dir = diffPct >= 0 ? '위' : '아래';
+          pricePosEl.textContent =
+            '📍 현재가는 5개월 이동평균보다 ' + sign + diffPct.toFixed(1) + '% ' + dir + '에 있어요. (스코어에는 미반영 — 타이밍 참고용)';
+          pricePosEl.hidden = false;
+        } else {
+          pricePosEl.hidden = true;
+        }
+      } else {
+        pricePosEl.hidden = true;
+      }
+
       const listEl = document.getElementById('scoreBreakdown');
       listEl.innerHTML = '';
       result.breakdown.forEach((item) => {
         const li = document.createElement('li');
-        li.className = 'score-row';
+        // 개선안 ①: 배점 대비 40% 이하인 약점 항목은 경고색으로 강조
+        const isWeak = item.score / item.max <= 0.4;
+        li.className = 'score-row' + (isWeak ? ' weak' : '');
         li.innerHTML =
           '<span class="score-label">' + escapeHtml(item.label) + '<span class="score-note"> · ' + escapeHtml(item.note) + '</span></span>' +
           '<span class="score-points">' + item.score + '/' + item.max + '</span>';
