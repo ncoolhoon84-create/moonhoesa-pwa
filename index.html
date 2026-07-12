@@ -317,6 +317,35 @@
   .chip:nth-child(4n+3) { border-color: rgba(182,240,0,0.4); color: var(--pop-green); }
   .chip:nth-child(4n+4) { border-color: rgba(255,93,162,0.4); color: var(--accent); }
 
+  .mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+    padding: 6px 12px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+
+  .mode-toggle:hover { transform: translateY(-1px); }
+
+  .mode-toggle.active {
+    color: var(--pop-green);
+    border-color: var(--pop-green);
+    background: rgba(255,210,63,0.12);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mode-toggle { transition: none; }
+    .mode-toggle:hover { transform: none; }
+  }
+
   .section-title {
     margin: 0 0 14px;
     font-size: 1.02rem;
@@ -506,6 +535,7 @@
           <span id="companyCode" class="mono muted"></span>
           <span id="dataSourceTag" class="data-source-tag demo">🧊데모</span>
           <div id="currentPriceRow" class="mono" style="margin-top:6px; font-size:1rem; font-weight:600;"></div>
+          <button id="easyModeToggle" type="button" class="mode-toggle">🔰 비전문가 모드</button>
         </div>
         <div class="marketcap-pill">
           <span class="label">시가총액</span>
@@ -665,6 +695,9 @@
 
   const HISTORY_KEY = 'moonhoesa_history_v1';
   const MAX_HISTORY = 20;
+
+  // 비전문가 모드는 종목을 바꿔도 유지되게 전역(모듈) 스코프에 둠
+  let easyModeEnabled = false;
 
   /* ============================================================
      실제 API 연동 설정
@@ -926,9 +959,10 @@
   ============================================================ */
   const OPINION_API_URL = 'https://stock-opinion-api.vercel.app/api/opinion';
 
-  async function fetchRealOutlookAndNews(name) {
+  async function fetchRealOutlookAndNews(name, overviewText) {
     try {
-      const url = OPINION_API_URL + '?name=' + encodeURIComponent(name);
+      let url = OPINION_API_URL + '?name=' + encodeURIComponent(name);
+      if (overviewText) url += '&overview=' + encodeURIComponent(overviewText);
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
@@ -939,7 +973,9 @@
 
       return {
         summary: hasSummary ? data.summary.trim() : null,
-        news: hasNews ? data.headlines : null
+        news: hasNews ? data.headlines : null,
+        easyOverview: (typeof data.easyOverview === 'string' && data.easyOverview.trim()) ? data.easyOverview.trim() : null,
+        easyOutlook: (typeof data.easyOutlook === 'string' && data.easyOutlook.trim()) ? data.easyOutlook.trim() : null
       };
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 실시간 업종전망/뉴스 조회 실패, 데모 데이터로 표시합니다:', err);
@@ -1185,16 +1221,42 @@
 
     addToHistory(c);
 
+    // ---------- 비전문가 모드 (회사소개/업종전망 쉬운 설명 토글) ----------
+    let currentOriginalOverview = c.overview;
+    let currentEasyOverview = null;
+    let currentOriginalOutlook = c.outlook;
+    let currentEasyOutlook = null;
+
+    function applyDisplayMode() {
+      document.getElementById('companyOverview').textContent =
+        (easyModeEnabled && currentEasyOverview) ? currentEasyOverview : currentOriginalOverview;
+      document.getElementById('outlookText').textContent =
+        (easyModeEnabled && currentEasyOutlook) ? currentEasyOutlook : currentOriginalOutlook;
+    }
+
+    const easyToggleBtn = document.getElementById('easyModeToggle');
+    easyToggleBtn.classList.toggle('active', easyModeEnabled);
+    easyToggleBtn.onclick = () => {
+      easyModeEnabled = !easyModeEnabled;
+      easyToggleBtn.classList.toggle('active', easyModeEnabled);
+      applyDisplayMode();
+    };
+
     // 2) 기업개요/시가총액과 비슷한 회사를 동시에 백그라운드 조회
     //    (매출순이익/이동평균/뉴스는 아직 데모 유지)
     const similarSourceTag = document.getElementById('similarSourceTag');
     similarSourceTag.textContent = '🔍찾는 중…';
     similarSourceTag.className = 'data-source-tag loading';
 
-    fetchRealOverview(code).then((real) => {
+    let overviewForAI = c.overview;
+
+    const overviewFetchPromise = fetchRealOverview(code).then((real) => {
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
       if (real && (real.overview || real.marketCap || real.price)) {
-        if (real.overview) document.getElementById('companyOverview').textContent = real.overview;
+        if (real.overview) {
+          currentOriginalOverview = real.overview;
+          overviewForAI = real.overview;
+        }
         if (real.marketCap) document.getElementById('marketCap').textContent = formatMarketCap(real.marketCap);
         if (real.price) {
           document.getElementById('currentPriceRow').innerHTML =
@@ -1206,6 +1268,7 @@
         sourceTag.textContent = '🧊데모(실패)';
         sourceTag.className = 'data-source-tag demo';
       }
+      applyDisplayMode();
     });
 
     fetchRealSimilar(code).then((names) => {
@@ -1289,36 +1352,44 @@
     newsSourceTag.textContent = '🔍찾는 중…';
     newsSourceTag.className = 'data-source-tag loading';
 
-    fetchRealOutlookAndNews(c.name).then((real) => {
-      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+    // 기업개요 조회가 끝난 뒤(실제 원문이 있으면 그걸로) 업종전망+쉬운설명을 이어서 조회
+    overviewFetchPromise
+      .then(() => fetchRealOutlookAndNews(c.name, overviewForAI))
+      .then((real) => {
+        if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
 
-      if (real && real.summary) {
-        document.getElementById('outlookText').textContent = real.summary;
-        outlookSourceTag.textContent = '🔥실시간';
-        outlookSourceTag.className = 'data-source-tag live';
-      } else {
-        outlookSourceTag.textContent = '🧊데모';
-        outlookSourceTag.className = 'data-source-tag demo';
-      }
+        if (real && real.summary) {
+          currentOriginalOutlook = real.summary;
+          outlookSourceTag.textContent = '🔥실시간';
+          outlookSourceTag.className = 'data-source-tag live';
+        } else {
+          outlookSourceTag.textContent = '🧊데모';
+          outlookSourceTag.className = 'data-source-tag demo';
+        }
 
-      if (real && real.news) {
-        const newsEl = document.getElementById('newsList');
-        newsEl.innerHTML = '';
-        real.news.forEach((n) => {
-          const li = document.createElement('li');
-          const titleHtml = n.link
-            ? '<a href="' + escapeHtml(n.link) + '" target="_blank" rel="noopener">' + escapeHtml(n.title) + '</a>'
-            : '<span>' + escapeHtml(n.title) + '</span>';
-          li.innerHTML = titleHtml + '<span class="news-source">구글뉴스</span>';
-          newsEl.appendChild(li);
-        });
-        newsSourceTag.textContent = '🔥실시간';
-        newsSourceTag.className = 'data-source-tag live';
-      } else {
-        newsSourceTag.textContent = '🧊데모';
-        newsSourceTag.className = 'data-source-tag demo';
-      }
-    });
+        if (real && real.easyOverview) currentEasyOverview = real.easyOverview;
+        if (real && real.easyOutlook) currentEasyOutlook = real.easyOutlook;
+        applyDisplayMode();
+
+        if (real && real.news) {
+          const newsEl = document.getElementById('newsList');
+          newsEl.innerHTML = '';
+          real.news.forEach((n) => {
+            const li = document.createElement('li');
+            const titleHtml = n.link
+              ? '<a href="' + escapeHtml(n.link) + '" target="_blank" rel="noopener">' + escapeHtml(n.title) + '</a>'
+              : '<span>' + escapeHtml(n.title) + '</span>';
+            li.innerHTML = titleHtml + '<span class="news-source">구글뉴스</span>';
+            newsEl.appendChild(li);
+          });
+          newsSourceTag.textContent = '🔥실시간';
+          newsSourceTag.className = 'data-source-tag live';
+        } else {
+          newsSourceTag.textContent = '🧊데모';
+          newsSourceTag.className = 'data-source-tag demo';
+        }
+      });
+
 
     const maSourceTag = document.getElementById('maSourceTag');
     maSourceTag.textContent = '🔍찾는 중…';
