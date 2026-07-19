@@ -429,8 +429,9 @@
 
   .score-row .score-label { color: var(--fg); }
   .score-row .score-note { color: var(--fg-muted); font-size: 0.78rem; }
-  .score-row .score-points { font-family: var(--mono); font-weight: 600; color: var(--accent); white-space: nowrap; }
+  .score-row .score-points { font-family: var(--mono); font-weight: 600; color: var(--fg); white-space: nowrap; }
 
+  .score-row.full .score-points { color: var(--down); }
   .score-row.weak .score-points { color: var(--up); }
   .score-row.weak .score-label::before { content: "⚠️ "; }
 
@@ -609,12 +610,12 @@
         <span><i class="dot price"></i>월봉 종가</span>
         <span><i class="dot ma"></i>5개월 이동평균</span>
       </div>
+      <div id="maRegimeRow" class="mono" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:0.85rem;" hidden></div>
     </section>
 
     <section id="scoreCard" class="card" hidden>
       <h3 class="section-title">우량주 건강검진 <span id="scoreSourceTag" class="data-source-tag demo" style="margin-left:6px;">🧊데모</span></h3>
       <div id="scoreTotal" style="font-size:2.2rem; font-weight:700; font-family:var(--mono); margin-bottom:4px;"></div>
-      <div id="scoreAction" class="data-source-tag" style="font-size:0.85rem; padding:5px 12px; margin-bottom:14px; display:inline-block;"></div>
       <div id="scoreCyclicalNotice" class="score-notice" hidden></div>
       <div id="scorePricePosition" class="score-price-position" hidden></div>
       <ul id="scoreBreakdown" style="list-style:none; margin:14px 0 0; padding:0;"></ul>
@@ -813,7 +814,7 @@
         const td = tr.querySelector('td');
         if (td) {
           const text = td.textContent.replace(/\s+/g, ' ').trim();
-          const m = text.match(/^([\d,]+)원\s*\/\s*([+-][\d,]+)원\s*\/\s*([+-][\d.]+)%/);
+          const m = text.match(/^([\d,]+)원\s*\/\s*([+-]?[\d,]+)원\s*\/\s*([+-]?[\d.]+)%/);
           if (m) {
             price = m[1];
             priceChange = m[2];
@@ -1011,7 +1012,46 @@
     });
   }
 
-  // 반환: {months, price, ma5} 또는 null(데이터 부족/조회 실패 → 데모 유지)
+  // 일봉 종가 배열에 대한 N일 단순 이동평균 (20일선/60일선용)
+  function computeDailyMA(dailyPrices, window) {
+    const closes = dailyPrices.map((d) => d.close);
+    return closes.map((_, i) => {
+      if (i < window - 1) return null;
+      const slice = closes.slice(i - window + 1, i + 1);
+      const sum = slice.reduce((s, v) => s + v, 0);
+      return sum / window;
+    });
+  }
+
+  // 20일선/60일선 정배열·기울기로 상승장/하락장/횡보장 간단 판정
+  // (후행지표 기반 근사치이며, 확정적인 시장 판단이 아님)
+  function classifyMarketRegime(dailyPrices, ma20Arr, ma60Arr) {
+    const n = dailyPrices.length;
+    const lastClose = dailyPrices[n - 1].close;
+    const lastMA20 = ma20Arr[n - 1];
+    const lastMA60 = ma60Arr[n - 1];
+    if (lastMA20 == null || lastMA60 == null) return null;
+
+    const backIdx = n - 1 - 20;
+    const ma60_20back = backIdx >= 0 ? ma60Arr[backIdx] : null;
+    let slopePct = null;
+    if (ma60_20back != null && ma60_20back !== 0) {
+      slopePct = ((lastMA60 - ma60_20back) / ma60_20back) * 100;
+    }
+
+    const bullishAlign = lastClose > lastMA20 && lastMA20 > lastMA60;
+    const bearishAlign = lastClose < lastMA20 && lastMA20 < lastMA60;
+
+    if (bullishAlign && slopePct !== null && slopePct > 1.5) {
+      return { label: '상승장', emoji: '📈', colorVar: '--up' };
+    }
+    if (bearishAlign && slopePct !== null && slopePct < -1.5) {
+      return { label: '하락장', emoji: '📉', colorVar: '--down' };
+    }
+    return { label: '횡보장', emoji: '➡️', colorVar: '--fg-muted' };
+  }
+
+  // 반환: {months, price, ma5, ma20Latest, ma60Latest, regime} 또는 null(데이터 부족/조회 실패 → 데모 유지)
   async function fetchRealMovingAverage(code) {
     try {
       const dailyPrices = await fetchDailyPrices(code, 260); // 약 11~12개월치
@@ -1031,7 +1071,18 @@
       const price = lastFive.map((i) => monthly[i].close);
       const ma = lastFive.map((i) => Math.round(ma5[i]));
 
-      return { months, price, ma5: ma };
+      // 같은 일봉 데이터로 20일선/60일선 + 시장국면도 같이 계산 (추가 API 호출 없음)
+      let ma20Latest = null, ma60Latest = null, regime = null;
+      if (dailyPrices.length >= 60) {
+        const ma20Arr = computeDailyMA(dailyPrices, 20);
+        const ma60Arr = computeDailyMA(dailyPrices, 60);
+        const lastIdx = dailyPrices.length - 1;
+        ma20Latest = ma20Arr[lastIdx] !== null ? Math.round(ma20Arr[lastIdx]) : null;
+        ma60Latest = ma60Arr[lastIdx] !== null ? Math.round(ma60Arr[lastIdx]) : null;
+        regime = classifyMarketRegime(dailyPrices, ma20Arr, ma60Arr);
+      }
+
+      return { months, price, ma5: ma, ma20Latest, ma60Latest, regime };
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 실시간 이동평균선 조회 실패, 데모 데이터로 표시합니다:', err);
       return null;
@@ -1622,6 +1673,18 @@
         maSourceTag.className = 'data-source-tag live';
         maForScore = real;
         if (typeof renderScoreCard === 'function') renderScoreCard();
+
+        const regimeRow = document.getElementById('maRegimeRow');
+        if (real.regime && real.ma20Latest !== null && real.ma60Latest !== null) {
+          regimeRow.innerHTML =
+            '<span style="color:var(' + real.regime.colorVar + '); font-weight:600;">' +
+            real.regime.emoji + ' ' + escapeHtml(real.regime.label) + '</span>' +
+            ' <span class="muted">· 20일선 ' + real.ma20Latest.toLocaleString('ko-KR') +
+            '원 · 60일선 ' + real.ma60Latest.toLocaleString('ko-KR') + '원</span>';
+          regimeRow.hidden = false;
+        } else {
+          regimeRow.hidden = true;
+        }
       } else {
         maSourceTag.textContent = '🧊데모';
         maSourceTag.className = 'data-source-tag demo';
@@ -1643,12 +1706,6 @@
 
       document.getElementById('scoreCard').hidden = false;
       document.getElementById('scoreTotal').textContent = result.total + ' / 100';
-
-      const actionEl = document.getElementById('scoreAction');
-      actionEl.textContent = result.action;
-      if (result.total >= 70) actionEl.className = 'data-source-tag live';
-      else if (result.total >= 50) actionEl.className = 'data-source-tag loading';
-      else actionEl.className = 'data-source-tag demo';
 
       // 개선안 ②: 경기순환 업종이면 안내 문구
       const cyclicalEl = document.getElementById('scoreCyclicalNotice');
@@ -1681,9 +1738,12 @@
       listEl.innerHTML = '';
       result.breakdown.forEach((item) => {
         const li = document.createElement('li');
-        // 개선안 ①: 배점 대비 40% 이하인 약점 항목은 경고색으로 강조
-        const isWeak = item.score / item.max <= 0.4;
-        li.className = 'score-row' + (isWeak ? ' weak' : '');
+        // 개선안 ①: 만점=파랑, 나쁨(40% 이하)=빨강, 그 사이=흰색(기본)
+        const ratio = item.score / item.max;
+        let tierClass = '';
+        if (ratio >= 1) tierClass = ' full';
+        else if (ratio <= 0.4) tierClass = ' weak';
+        li.className = 'score-row' + tierClass;
         li.innerHTML =
           '<span class="score-label">' + escapeHtml(item.label) + '<span class="score-note"> · ' + escapeHtml(item.note) + '</span></span>' +
           '<span class="score-points">' + item.score + '/' + item.max + '</span>';
