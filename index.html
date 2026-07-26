@@ -1690,7 +1690,10 @@
             const titleHtml = n.link
               ? '<a href="' + escapeHtml(n.link) + '" target="_blank" rel="noopener">' + escapeHtml(n.title) + '</a>'
               : '<span>' + escapeHtml(n.title) + '</span>';
-            li.innerHTML = titleHtml + '<span class="news-source">구글뉴스</span>';
+            const pubTs = n.pubDate ? Date.parse(n.pubDate) : NaN;
+            const timeLabel = !Number.isNaN(pubTs) ? formatRelativeTime(pubTs) : null;
+            const sourceText = timeLabel ? '구글뉴스 · ' + timeLabel : '구글뉴스';
+            li.innerHTML = titleHtml + '<span class="news-source">' + escapeHtml(sourceText) + '</span>';
             newsEl.appendChild(li);
           });
           newsSourceTag.textContent = '🔥실시간';
