@@ -959,6 +959,26 @@
      60개씩 여러 페이지로 나눠 요청해서 이어붙인 다음, 월별 마지막
      거래일 종가로 월봉을 만들고 그 위에 5개월 이동평균을 직접 계산함.
   ============================================================ */
+  // 실시간(에 가까운) 현재가 — m.stock.naver.com의 /integration 엔드포인트 재사용.
+  // 전일대비/등락률 부호 필드는 API마다 표기가 달라 오판 위험이 있어서,
+  // 여기서는 "현재가 숫자"만 업그레이드하고 전일대비/등락률은 FnGuide 값을 그대로 씀.
+  async function fetchRealTimePrice(code) {
+    try {
+      const targetUrl = `https://m.stock.naver.com/api/stock/${code}/integration`;
+      const res = await fetch(buildProxyUrl(targetUrl));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const closePrice =
+        data.closePrice ||
+        (data.dealTrendInfos && data.dealTrendInfos[0] && data.dealTrendInfos[0].closePrice);
+      if (!closePrice) return null;
+      return { price: String(closePrice) };
+    } catch (err) {
+      console.warn('[무슨회사겠지 뭐] 실시간 현재가 조회 실패:', err);
+      return null;
+    }
+  }
+
   async function fetchDailyPrices(code, totalDesired) {
     const PAGE_CHUNK = 60;
     let page = 1;
@@ -1514,6 +1534,9 @@
 
     let overviewForAI = c.overview;
     let scorePerPbr = { per: null, pbr: null, industryPer: null };
+    let realtimePriceApplied = false;
+    let lastKnownPriceChange = null;
+    let lastKnownPriceChangePct = null;
 
     const overviewFetchPromise = fetchRealOverview(code).then((real) => {
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
@@ -1524,10 +1547,14 @@
         }
         if (real.marketCap) document.getElementById('marketCap').textContent = formatMarketCap(real.marketCap);
         if (real.price) {
-          document.getElementById('currentPriceRow').innerHTML =
-            renderPriceRow(real.price, real.priceChange, real.priceChangePct);
-          const parsedPrice = parseFloat(String(real.price).replace(/,/g, ''));
-          if (!Number.isNaN(parsedPrice)) currentPriceValue = parsedPrice;
+          if (!realtimePriceApplied) {
+            document.getElementById('currentPriceRow').innerHTML =
+              renderPriceRow(real.price, real.priceChange, real.priceChangePct);
+            const parsedPrice = parseFloat(String(real.price).replace(/,/g, ''));
+            if (!Number.isNaN(parsedPrice)) currentPriceValue = parsedPrice;
+          }
+          lastKnownPriceChange = real.priceChange;
+          lastKnownPriceChangePct = real.priceChangePct;
         }
         scorePerPbr = { per: real.per || null, pbr: real.pbr || null, industryPer: real.industryPer || null };
         if (typeof renderScoreCard === 'function') renderScoreCard();
@@ -1556,6 +1583,21 @@
         // 섹터 딕셔너리에 없는 종목이거나 조회 실패 → 데모 목록 유지
         similarSourceTag.textContent = '🧊데모';
         similarSourceTag.className = 'data-source-tag demo';
+      }
+    });
+
+    // 현재가 숫자만 실시간 소스로 업그레이드 (전일대비/등락률은 FnGuide 값 유지)
+    fetchRealTimePrice(code).then((rt) => {
+      if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
+      if (rt && rt.price) {
+        document.getElementById('currentPriceRow').innerHTML =
+          (lastKnownPriceChange !== null)
+            ? renderPriceRow(rt.price, lastKnownPriceChange, lastKnownPriceChangePct)
+            : escapeHtml(rt.price) + '원';
+        const parsedPrice = parseFloat(String(rt.price).replace(/,/g, ''));
+        if (!Number.isNaN(parsedPrice)) currentPriceValue = parsedPrice;
+        realtimePriceApplied = true;
+        if (typeof renderScoreCard === 'function') renderScoreCard();
       }
     });
 
