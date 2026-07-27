@@ -961,25 +961,34 @@
      60개씩 여러 페이지로 나눠 요청해서 이어붙인 다음, 월별 마지막
      거래일 종가로 월봉을 만들고 그 위에 5개월 이동평균을 직접 계산함.
   ============================================================ */
-  // 실시간(에 가까운) 현재가 — m.stock.naver.com의 /integration 엔드포인트 재사용.
-  // 전일대비/등락률 부호 필드는 API마다 표기가 달라 오판 위험이 있어서,
-  // 여기서는 "현재가 숫자"만 업그레이드하고 전일대비/등락률은 FnGuide 값을 그대로 씀.
+  // 실시간 현재가 + 전일대비 + 등락률 — polling.finance.naver.com의 realtime 엔드포인트 사용.
+  // (naver-proxy Worker의 ALLOWED_HOSTS에 이미 이 호스트가 등록돼 있어서 바로 호출 가능.)
+  // 이 엔드포인트는 datas[0]에 closePrice/compareToPreviousClosePrice/fluctuationsRatio를
+  // 주는데, 부호가 안 붙어 있을 수 있어서 compareToPreviousPrice.code(2=상승,5=하락,4=하한,3=보합)로
+  // 방향을 판별해 직접 부호를 붙여준다.
   async function fetchRealTimePrice(code) {
     try {
-      const targetUrl = `https://m.stock.naver.com/api/stock/${code}/integration`;
+      const targetUrl = `https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`;
       const res = await fetch(buildProxyUrl(targetUrl));
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
-      const closePrice =
-        data.closePrice ||
-        (data.dealTrendInfos && data.dealTrendInfos[0] && data.dealTrendInfos[0].closePrice);
-      if (!closePrice) {
-        // ⚠️ 임시 진단용 — 실제 응답 구조 확인되면 이 로그는 지울 것
-        console.warn('[무슨회사겠지 뭐] /integration 응답에서 현재가 필드를 못 찾음. 최상위 키들:', Object.keys(data));
-        console.warn('[무슨회사겠지 뭐] /integration 응답 전체:', JSON.stringify(data).slice(0, 1500));
-        return null;
-      }
-      return { price: String(closePrice) };
+      const d = data && data.datas && data.datas[0];
+      if (!d || !d.closePrice) return null;
+
+      const dirCode = d.compareToPreviousPrice && String(d.compareToPreviousPrice.code);
+      const isDown = dirCode === '5' || dirCode === '4'; // 하락 / 하한
+      const isFlat = dirCode === '3'; // 보합
+
+      const changeAbs = String(d.compareToPreviousClosePrice ?? '').replace(/^[+-]/, '');
+      const pctAbs = String(d.fluctuationsRatio ?? '').replace(/^[+-]/, '');
+      const sign = isFlat ? '' : (isDown ? '-' : '+');
+
+      return {
+        price: String(d.closePrice),
+        priceChange: changeAbs ? sign + changeAbs : null,
+        priceChangePct: pctAbs ? sign + pctAbs : null,
+        marketStatus: d.marketStatus || null
+      };
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 실시간 현재가 조회 실패:', err);
       return null;
@@ -1542,6 +1551,7 @@
     let overviewForAI = c.overview;
     let scorePerPbr = { per: null, pbr: null, industryPer: null };
     let realtimePriceApplied = false;
+    let realtimeChangeApplied = false; // 실시간(polling) 전일대비/등락률이 이미 적용됐는지
     let lastKnownPriceChange = null;
     let lastKnownPriceChangePct = null;
 
@@ -1554,15 +1564,17 @@
         }
         if (real.marketCap) document.getElementById('marketCap').textContent = formatMarketCap(real.marketCap);
         if (real.price) {
-          if (!realtimePriceApplied) {
+          // 실시간(polling) 전일대비/등락률이 이미 적용돼 있으면 FnGuide 값으로 덮어쓰지 않음
+          if (!realtimeChangeApplied) {
+            const priceToShow = realtimePriceApplied
+              ? currentPriceValue.toLocaleString('ko-KR')
+              : real.price;
             document.getElementById('currentPriceRow').innerHTML =
-              renderPriceRow(real.price, real.priceChange, real.priceChangePct);
-            const parsedPrice = parseFloat(String(real.price).replace(/,/g, ''));
-            if (!Number.isNaN(parsedPrice)) currentPriceValue = parsedPrice;
-          } else if (currentPriceValue !== null) {
-            // 실시간 숫자가 이미 떠있는 상태 — 그 숫자는 유지하고 전일대비/등락률만 새로 붙여줌
-            document.getElementById('currentPriceRow').innerHTML =
-              renderPriceRow(currentPriceValue.toLocaleString('ko-KR'), real.priceChange, real.priceChangePct);
+              renderPriceRow(priceToShow, real.priceChange, real.priceChangePct);
+            if (!realtimePriceApplied) {
+              const parsedPrice = parseFloat(String(real.price).replace(/,/g, ''));
+              if (!Number.isNaN(parsedPrice)) currentPriceValue = parsedPrice;
+            }
           }
           lastKnownPriceChange = real.priceChange;
           lastKnownPriceChangePct = real.priceChangePct;
@@ -1597,17 +1609,21 @@
       }
     });
 
-    // 현재가 숫자만 실시간 소스로 업그레이드 (전일대비/등락률은 FnGuide 값 유지)
+    // 현재가 + 전일대비 + 등락률 모두 실시간(polling) 소스로 업그레이드.
+    // 실시간 응답에 전일대비 값이 없는 예외적인 경우에만 FnGuide 값으로 대체.
     fetchRealTimePrice(code).then((rt) => {
       if (document.getElementById('companyCode').textContent !== code) return; // 그 사이 다른 종목 선택함
       if (rt && rt.price) {
+        const changeToShow = rt.priceChange !== null ? rt.priceChange : lastKnownPriceChange;
+        const pctToShow = rt.priceChangePct !== null ? rt.priceChangePct : lastKnownPriceChangePct;
         document.getElementById('currentPriceRow').innerHTML =
-          (lastKnownPriceChange !== null)
-            ? renderPriceRow(rt.price, lastKnownPriceChange, lastKnownPriceChangePct)
+          (changeToShow !== null)
+            ? renderPriceRow(rt.price, changeToShow, pctToShow)
             : escapeHtml(rt.price) + '원';
         const parsedPrice = parseFloat(String(rt.price).replace(/,/g, ''));
         if (!Number.isNaN(parsedPrice)) currentPriceValue = parsedPrice;
         realtimePriceApplied = true;
+        if (rt.priceChange !== null) realtimeChangeApplied = true;
         if (typeof renderScoreCard === 'function') renderScoreCard();
       }
     });
