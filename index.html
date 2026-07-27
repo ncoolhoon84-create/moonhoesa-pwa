@@ -769,7 +769,9 @@
   const OVERVIEW_TARGET_BASE = 'https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=';
 
   function buildProxyUrl(targetUrl) {
-    return PROXY_BASE_URL + '/?url=' + encodeURIComponent(targetUrl);
+    // 브라우저 자체 HTTP 캐시가 "같은 주소 = 예전 응답 재사용"으로 처리하는 걸
+    // 막기 위해, 매번 다른 타임스탬프를 붙여서 완전히 새 요청으로 보이게 함.
+    return PROXY_BASE_URL + '/?url=' + encodeURIComponent(targetUrl) + '&_t=' + Date.now();
   }
 
   // navercomp.wisereport.co.kr의 HTML 응답에서 기업개요/시가총액만 뽑아냄
