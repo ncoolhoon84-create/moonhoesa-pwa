@@ -973,7 +973,12 @@
       const closePrice =
         data.closePrice ||
         (data.dealTrendInfos && data.dealTrendInfos[0] && data.dealTrendInfos[0].closePrice);
-      if (!closePrice) return null;
+      if (!closePrice) {
+        // ⚠️ 임시 진단용 — 실제 응답 구조 확인되면 이 로그는 지울 것
+        console.warn('[무슨회사겠지 뭐] /integration 응답에서 현재가 필드를 못 찾음. 최상위 키들:', Object.keys(data));
+        console.warn('[무슨회사겠지 뭐] /integration 응답 전체:', JSON.stringify(data).slice(0, 1500));
+        return null;
+      }
       return { price: String(closePrice) };
     } catch (err) {
       console.warn('[무슨회사겠지 뭐] 실시간 현재가 조회 실패:', err);
